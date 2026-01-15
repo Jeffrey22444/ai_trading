@@ -102,7 +102,6 @@ _Live trading dashboard showing real-time P&L tracking, AI decisions, and positi
 ### Core Contributors
 
 - [微扰理论](https://x.com/weiraolilun) - Core Developer
-- [Ernest](https://x.com/0xErnest247) - Core Developer
 
 ## License
 
