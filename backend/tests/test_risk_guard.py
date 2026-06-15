@@ -1,6 +1,6 @@
 import pytest
 
-from trading.risk_guard import validate_open_decision
+from trading.risk_guard import normalize_position_size_usd, validate_open_decision
 
 
 def test_live_opening_requires_explicit_opt_in():
@@ -60,3 +60,22 @@ def test_valid_testnet_opening_is_accepted():
         testnet=True,
         allow_live_trading=False,
     )
+
+
+def test_position_limit_rounding_is_clamped_down_to_safe_cent():
+    normalized = normalize_position_size_usd(
+        position_size_usd=199.91,
+        available_balance=999.542939,
+        max_position_size_percent=0.2,
+    )
+
+    assert normalized == 199.9
+
+
+def test_position_limit_rejects_more_than_one_cent_overage():
+    with pytest.raises(ValueError, match="开仓金额超过"):
+        normalize_position_size_usd(
+            position_size_usd=199.92,
+            available_balance=999.542939,
+            max_position_size_percent=0.2,
+        )

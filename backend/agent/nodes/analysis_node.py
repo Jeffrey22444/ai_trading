@@ -4,14 +4,14 @@ Analysis Node - ReAct Agent for technical analysis and decision making
 
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from agent.state import AgentState, SymbolDecision
+from agent.state import AgentState
 from config.settings import config
 from services.prompt_service import get_trading_strategy
 
@@ -34,6 +34,11 @@ class SymbolDecision(BaseModel):
     take_profit_price: Optional[float] = Field(
         description="止盈价格，仅对开仓操作有效", default=None
     )
+
+    @field_validator("position_size_usd", mode="before")
+    @classmethod
+    def normalize_optional_position_size(cls, value):
+        return 0.0 if value is None else value
 
 
 class TradingDecision(BaseModel):

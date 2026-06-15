@@ -169,14 +169,11 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
     position_size_usd = decision.get("position_size_usd", 0)
     leverage = config.exchange.default_leverage  # 从配置获取默认杠杆
     
-    # 根据 AI 决策的仓位价值计算交易数量
-    quantity = position_size_usd / current_price
-    
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
 
-    validate_open_decision(
+    position_size_usd = validate_open_decision(
         action="OPEN_LONG",
         position_size_usd=position_size_usd,
         current_price=current_price,
@@ -187,6 +184,7 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
         testnet=config.exchange.testnet,
         allow_live_trading=config.exchange.allow_live_trading,
     )
+    quantity = position_size_usd / current_price
     
     # 执行开多仓（含止损止盈）
     await trader.open_long(symbol, quantity, leverage, stop_loss_price, take_profit_price)
@@ -209,14 +207,11 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
     position_size_usd = decision.get("position_size_usd", 0)
     leverage = config.exchange.default_leverage  # 从配置获取默认杠杆
     
-    # 根据 AI 决策的仓位价值计算交易数量
-    quantity = position_size_usd / current_price
-    
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
 
-    validate_open_decision(
+    position_size_usd = validate_open_decision(
         action="OPEN_SHORT",
         position_size_usd=position_size_usd,
         current_price=current_price,
@@ -227,6 +222,7 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
         testnet=config.exchange.testnet,
         allow_live_trading=config.exchange.allow_live_trading,
     )
+    quantity = position_size_usd / current_price
     
     # 执行开空仓（含止损止盈）
     await trader.open_short(symbol, quantity, leverage, stop_loss_price, take_profit_price)

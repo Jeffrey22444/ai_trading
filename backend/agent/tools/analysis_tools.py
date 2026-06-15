@@ -2,10 +2,9 @@
 Multi-Timeframe Technical Analysis Tool for AI Agent
 Uses TA-Lib for professional technical indicators across multiple timeframes
 """
-import logging
 import numpy as np
 import talib
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
 
 from market.data_cache import kline_cache
@@ -79,35 +78,11 @@ def tech_analysis_tool(symbol: str) -> Dict[str, Any]:
         
         logger.info(f"获取 {symbol} 多时间框架技术分析数据")
         
-        def get_klines_sync(timeframe):
-            """同步方式获取指定时间框架的K线数据"""
-            import asyncio
-            loop = None
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 如果事件循环正在运行，我们需要在新的循环中运行
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(lambda: asyncio.run(kline_cache.get_klines(symbol, timeframe, limit=200)))
-                        return future.result()
-                else:
-                    return loop.run_until_complete(kline_cache.get_klines(symbol, timeframe, limit=200))
-            except RuntimeError:
-                # 创建新的事件循环
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    result = loop.run_until_complete(kline_cache.get_klines(symbol, timeframe, limit=200))
-                    return result
-                finally:
-                    loop.close()
-        
         # 分析多个时间框架
         multi_timeframe_analysis = {}
         
         for timeframe in config.agent.timeframes:
-            klines = get_klines_sync(timeframe)
+            klines = kline_cache.get_klines_snapshot(symbol, timeframe, limit=200)
             logger.info(f"获取到 {symbol} {timeframe} {len(klines)} 根K线数据")
             
             # 分析单个时间框架
@@ -123,8 +98,6 @@ def tech_analysis_tool(symbol: str) -> Dict[str, Any]:
             closes = np.array([float(kline.close_price) for kline in klines], dtype=np.float64)
             highs = np.array([float(kline.high_price) for kline in klines], dtype=np.float64)
             lows = np.array([float(kline.low_price) for kline in klines], dtype=np.float64)
-            volumes = np.array([float(kline.volume) for kline in klines], dtype=np.float64)
-            
             current_price = closes[-1]
             price_change = closes[-1] - closes[-2] if len(closes) >= 2 else 0
             price_change_percent = (price_change / closes[-2] * 100) if len(closes) >= 2 and closes[-2] > 0 else 0

@@ -14,6 +14,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from config.settings import config  # noqa: E402
 from trading.factory import get_trader  # noqa: E402
+from trading.risk_guard import normalize_position_size_usd  # noqa: E402
 
 
 VALID_ACTIONS = {
@@ -75,11 +76,15 @@ def validate_decision(
         return False
 
     position_size = float(decision.get("position_size_usd") or 0)
-    max_position_size = available_balance * config.default_risk.max_position_size_percent
-    if position_size <= 0 or position_size > max_position_size:
+    try:
+        normalize_position_size_usd(
+            position_size_usd=position_size,
+            available_balance=available_balance,
+            max_position_size_percent=config.default_risk.max_position_size_percent,
+        )
+    except ValueError as exc:
         fail(
-            f"{symbol}: position_size_usd={position_size} 超出允许范围 "
-            f"(max={max_position_size})"
+            f"{symbol}: position_size_usd={position_size} 超出允许范围: {exc}"
         )
 
     stop_loss = decision.get("stop_loss_price")
