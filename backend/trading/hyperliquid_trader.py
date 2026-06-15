@@ -27,6 +27,12 @@ class HyperliquidTrader(ExchangeTrader):
     def _symbol(self, symbol: str) -> str:
         return to_exchange_symbol(symbol, "hyperliquid")
 
+    @staticmethod
+    def _ensure_order_accepted(order, description: str):
+        if not order or order.get("status") == "rejected":
+            raise RuntimeError(f"Hyperliquid {description}被拒绝")
+        return order
+
     async def get_balance(self) -> Balance:
         balance = self.exchange.fetch_balance()
         usdc = balance.get("USDC", {})
@@ -90,28 +96,37 @@ class HyperliquidTrader(ExchangeTrader):
             raise ValueError("Hyperliquid 空头止损止盈方向无效")
         if not await self.set_leverage(symbol, leverage):
             raise RuntimeError(f"无法设置 {symbol} 杠杆")
-        opening = self.exchange.create_order(
-            exchange_symbol, "market", side, quantity, current_price, {}
+        opening = self._ensure_order_accepted(
+            self.exchange.create_order(
+                exchange_symbol, "market", side, quantity, current_price, {}
+            ),
+            "开仓订单",
         )
         close_side = "sell" if side == "buy" else "buy"
         try:
             if stop_loss_price is not None:
-                self.exchange.create_order(
-                    exchange_symbol,
-                    "market",
-                    close_side,
-                    quantity,
-                    stop_loss_price,
-                    {"stopLossPrice": stop_loss_price, "reduceOnly": True},
+                self._ensure_order_accepted(
+                    self.exchange.create_order(
+                        exchange_symbol,
+                        "market",
+                        close_side,
+                        quantity,
+                        stop_loss_price,
+                        {"stopLossPrice": stop_loss_price, "reduceOnly": True},
+                    ),
+                    "止损保护单",
                 )
             if take_profit_price is not None:
-                self.exchange.create_order(
-                    exchange_symbol,
-                    "market",
-                    close_side,
-                    quantity,
-                    take_profit_price,
-                    {"takeProfitPrice": take_profit_price, "reduceOnly": True},
+                self._ensure_order_accepted(
+                    self.exchange.create_order(
+                        exchange_symbol,
+                        "market",
+                        close_side,
+                        quantity,
+                        take_profit_price,
+                        {"takeProfitPrice": take_profit_price, "reduceOnly": True},
+                    ),
+                    "止盈保护单",
                 )
         except Exception as exc:
             logger.error("Hyperliquid 保护单失败，正在立即减仓平仓")
@@ -172,8 +187,16 @@ class HyperliquidTrader(ExchangeTrader):
             raise ValueError(f"平仓数量 {quantity} 超过持仓数量 {position.size}")
         await self.cancel_all_orders(symbol)
         price = await self.get_market_price(symbol)
-        return self.exchange.create_order(
-            self._symbol(symbol), "market", side, quantity, price, {"reduceOnly": True}
+        return self._ensure_order_accepted(
+            self.exchange.create_order(
+                self._symbol(symbol),
+                "market",
+                side,
+                quantity,
+                price,
+                {"reduceOnly": True},
+            ),
+            "平仓订单",
         )
 
     async def close_long(self, symbol: str, quantity: float = 0):

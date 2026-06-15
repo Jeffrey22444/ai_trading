@@ -49,15 +49,35 @@ async def wait_for_position(trader, symbol: str, side: str | None, attempts=10):
     fail(f"{symbol} 未在等待时间内达到状态: {expected}")
 
 
-async def verify_protection_orders(trader, symbol: str) -> None:
+async def verify_protection_orders(
+    trader, symbol: str, side: str, reference_price: float, attempts=10
+) -> None:
     exchange_symbol = to_exchange_symbol(symbol, "hyperliquid")
-    for _ in range(10):
+    expected_order_side = "sell" if side == "LONG" else "buy"
+    for _ in range(attempts):
         orders = trader.exchange.fetch_open_orders(exchange_symbol)
-        reduce_only = [order for order in orders if order.get("reduceOnly")]
-        if len(reduce_only) >= 2:
+        triggers = [
+            order
+            for order in orders
+            if order.get("reduceOnly")
+            and order.get("triggerPrice") is not None
+            and order.get("side") == expected_order_side
+        ]
+        prices = [float(order["triggerPrice"]) for order in triggers]
+        has_stop_loss = (
+            any(price < reference_price for price in prices)
+            if side == "LONG"
+            else any(price > reference_price for price in prices)
+        )
+        has_take_profit = (
+            any(price > reference_price for price in prices)
+            if side == "LONG"
+            else any(price < reference_price for price in prices)
+        )
+        if has_stop_loss and has_take_profit:
             return
         await asyncio.sleep(1)
-    fail(f"{symbol} 未观察到两张 reduceOnly 保护单")
+    fail(f"{symbol} 未观察到有效止损和止盈保护单")
 
 
 async def run_acceptance(symbol: str, notional_usd: float) -> None:
@@ -70,6 +90,9 @@ async def run_acceptance(symbol: str, notional_usd: float) -> None:
     ]
     if existing:
         fail(f"{symbol} 已有持仓，拒绝执行确定性验收")
+    exchange_symbol = to_exchange_symbol(symbol, "hyperliquid")
+    if trader.exchange.fetch_open_orders(exchange_symbol):
+        fail(f"{symbol} 已有挂单，拒绝执行确定性验收")
 
     balance = await trader.get_balance()
     if balance.available_balance < notional_usd:
@@ -92,7 +115,7 @@ async def run_acceptance(symbol: str, notional_usd: float) -> None:
             price * 1.04,
         )
         await wait_for_position(trader, symbol, "LONG")
-        await verify_protection_orders(trader, symbol)
+        await verify_protection_orders(trader, symbol, "LONG", price)
         await trader.close_long(symbol)
         await wait_for_position(trader, symbol, None)
         print("Hyperliquid 测试网开多、保护单、平多通过")
@@ -106,7 +129,7 @@ async def run_acceptance(symbol: str, notional_usd: float) -> None:
             price * 0.96,
         )
         await wait_for_position(trader, symbol, "SHORT")
-        await verify_protection_orders(trader, symbol)
+        await verify_protection_orders(trader, symbol, "SHORT", price)
         await trader.close_short(symbol)
         await wait_for_position(trader, symbol, None)
         print("Hyperliquid 测试网开空、保护单、平空通过")

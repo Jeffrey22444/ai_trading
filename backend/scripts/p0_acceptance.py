@@ -97,6 +97,16 @@ def validate_decision(
     return False
 
 
+def validate_execution(*, symbol: str, decision: dict[str, Any]) -> None:
+    """Require the execution node to complete every saved decision."""
+    execution_result = decision.get("execution_result") or {}
+    if (
+        decision.get("execution_status") != "completed"
+        or execution_result.get("status") != "success"
+    ):
+        fail(f"{symbol}: 执行未成功: {execution_result}")
+
+
 async def run_acceptance(base_url: str, cycles: int) -> None:
     timeout = httpx.Timeout(600.0)
     async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
@@ -115,6 +125,11 @@ async def run_acceptance(base_url: str, cycles: int) -> None:
         if "拿不准就 HOLD" not in strategy.get("strategy", ""):
             fail("当前生效策略不是已配置的 P0 中文策略")
 
+        previous = (
+            await client.get("/decisions", params={"limit": 1, "order": "desc"})
+        ).raise_for_status().json()
+        previous_decision_id = previous[0]["id"] if previous else None
+
         saw_hold = False
         for cycle in range(1, cycles + 1):
             response = (await client.post("/agent/analyze")).raise_for_status().json()
@@ -126,12 +141,17 @@ async def run_acceptance(base_url: str, cycles: int) -> None:
             ).raise_for_status().json()
             if not decisions:
                 fail(f"第 {cycle} 轮没有保存决策记录")
+            current_decision_id = decisions[0]["id"]
+            if current_decision_id == previous_decision_id:
+                fail(f"第 {cycle} 轮没有产生新的决策记录")
+            previous_decision_id = current_decision_id
 
             saved = decisions[0]["symbol_decisions"]
             if set(saved) != set(config.agent.symbols):
                 fail(f"第 {cycle} 轮标的不完整: {sorted(saved)}")
 
             for symbol, decision in saved.items():
+                validate_execution(symbol=symbol, decision=decision)
                 price_response = (
                     await client.get(f"/trading/market/{symbol}/price")
                 ).raise_for_status().json()

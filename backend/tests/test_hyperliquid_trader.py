@@ -12,6 +12,7 @@ class FakeHyperliquidExchange:
         self.cancelled = []
         self.open_orders = [{"id": "sl"}, {"id": "tp"}]
         self.fail_protection = False
+        self.reject_opening = False
 
     def set_sandbox_mode(self, enabled):
         self.sandbox = enabled
@@ -23,6 +24,8 @@ class FakeHyperliquidExchange:
         return {"last": 100.0}
 
     def create_order(self, symbol, order_type, side, amount, price, params):
+        if self.reject_opening and not params:
+            return {"id": None, "status": "rejected"}
         if self.fail_protection and (
             "stopLossPrice" in params or "takeProfitPrice" in params
         ):
@@ -117,6 +120,16 @@ async def test_protection_failure_attempts_immediate_reduce_only_close(trader):
     emergency_close = trader.exchange.orders[-1]
     assert emergency_close["side"] == "buy"
     assert emergency_close["params"] == {"reduceOnly": True}
+
+
+@pytest.mark.asyncio
+async def test_rejected_opening_order_does_not_place_protection_orders(trader):
+    trader.exchange.reject_opening = True
+
+    with pytest.raises(RuntimeError, match="开仓订单被拒绝"):
+        await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
+
+    assert trader.exchange.orders == []
 
 
 @pytest.mark.asyncio
