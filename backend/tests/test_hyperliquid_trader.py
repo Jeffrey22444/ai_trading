@@ -13,6 +13,7 @@ class FakeHyperliquidExchange:
         self.open_orders = [{"id": "sl"}, {"id": "tp"}]
         self.fail_protection = False
         self.reject_opening = False
+        self.opening_filled = None
 
     def set_sandbox_mode(self, enabled):
         self.sandbox = enabled
@@ -39,6 +40,8 @@ class FakeHyperliquidExchange:
             "price": price,
             "params": params,
         }
+        if not params and self.opening_filled is not None:
+            order["filled"] = self.opening_filled
         self.orders.append(order)
         return order
 
@@ -130,6 +133,27 @@ async def test_rejected_opening_order_does_not_place_protection_orders(trader):
         await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
 
     assert trader.exchange.orders == []
+
+
+@pytest.mark.asyncio
+async def test_partial_open_uses_filled_quantity_for_protection(trader):
+    trader.exchange.opening_filled = 0.08
+
+    await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
+
+    _, stop_loss, take_profit = trader.exchange.orders
+    assert stop_loss["amount"] == 0.08
+    assert take_profit["amount"] == 0.08
+
+
+@pytest.mark.asyncio
+async def test_zero_fill_opening_is_rejected_before_protection(trader):
+    trader.exchange.opening_filled = 0
+
+    with pytest.raises(RuntimeError, match="开仓订单未成交"):
+        await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
+
+    assert len(trader.exchange.orders) == 1
 
 
 @pytest.mark.asyncio

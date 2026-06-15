@@ -102,6 +102,14 @@ class HyperliquidTrader(ExchangeTrader):
             ),
             "开仓订单",
         )
+        filled = opening.get("filled")
+        if filled is not None:
+            filled = float(filled)
+            if filled <= 0:
+                raise RuntimeError("Hyperliquid 开仓订单未成交")
+            protection_quantity = filled
+        else:
+            protection_quantity = quantity
         close_side = "sell" if side == "buy" else "buy"
         try:
             if stop_loss_price is not None:
@@ -110,7 +118,7 @@ class HyperliquidTrader(ExchangeTrader):
                         exchange_symbol,
                         "market",
                         close_side,
-                        quantity,
+                        protection_quantity,
                         stop_loss_price,
                         {"stopLossPrice": stop_loss_price, "reduceOnly": True},
                     ),
@@ -122,7 +130,7 @@ class HyperliquidTrader(ExchangeTrader):
                         exchange_symbol,
                         "market",
                         close_side,
-                        quantity,
+                        protection_quantity,
                         take_profit_price,
                         {"takeProfitPrice": take_profit_price, "reduceOnly": True},
                     ),
@@ -136,7 +144,7 @@ class HyperliquidTrader(ExchangeTrader):
                     exchange_symbol,
                     "market",
                     close_side,
-                    quantity,
+                    protection_quantity,
                     latest_price,
                     {"reduceOnly": True},
                 )
