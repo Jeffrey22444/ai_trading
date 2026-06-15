@@ -68,8 +68,8 @@ description: "Implementation task list for AlphaTransformer AI Trading System"
 
 - [x] T013 [P] [US2] Complete market data types in backend/market/types.py
 - [x] T014 [US2] Complete K-line data caching system with memory management in backend/market/data_cache.py
-- [x] T015 [P] [US2] Complete Binance REST API client for historical data in backend/market/api_client.py
-- [x] T016 [US2] Complete Binance WebSocket client for real-time data in backend/market/websocket_client.py
+- [x] T015 [P] [US2] Complete Hyperliquid OHLCV client in backend/market/hyperliquid_market.py
+- [x] T016 [US2] Complete application market-data lifecycle in backend/market/market_data_client.py
 - [x] T017 [US2] Implement automatic reconnection logic for WebSocket failures
 - [x] T018 [US2] Add data validation and quality checks
 - [x] T019 [US2] Create unified market data access interface for agent tools
@@ -115,7 +115,7 @@ description: "Implementation task list for AlphaTransformer AI Trading System"
 
 - [ ] T034 [P] [US3] Add CCXT dependency and exchange configuration
 - [ ] T035 [P] [US3] Design unified trading interface with CCXT backend (trading/interface.py)
-- [ ] T036 [P] [US3] Implement Binance Futures trader using CCXT (trading/binance_futures.py)  
+- [x] T036 [P] [US3] Implement Hyperliquid perpetual trader using CCXT (trading/hyperliquid_trader.py)
 - [ ] T037 [P] [US3] Create position and balance management service (trading/position_service.py)
 - [ ] T038 [P] [US3] Implement risk management controls (position sizing, stop-loss, leverage)
 - [ ] T039 [P] [US3] Create order manager with execution confirmation (trading/order_manager.py)
@@ -128,7 +128,7 @@ description: "Implementation task list for AlphaTransformer AI Trading System"
 **Checkpoint**: Real futures trading execution with proper risk management
 
 ### Key Changes from Original Plan
-- Use CCXT for multi-exchange support instead of direct Binance API
+- Use CCXT at the single Hyperliquid exchange boundary
 - Focus on futures trading (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT) not spot BUY/SELL
 - Simplified database design (reuse TradingAnalysis table)
 - Unified trading interface supporting multiple exchanges

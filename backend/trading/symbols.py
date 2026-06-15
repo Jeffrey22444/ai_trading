@@ -20,9 +20,7 @@ def to_exchange_symbol(symbol: str, exchange_name: str) -> str:
     name = exchange_name.lower()
     if name == "hyperliquid":
         return f"{base}/USDC:USDC"
-    if name == "binance_futures":
-        return f"{base}/USDT:USDT"
-    raise ValueError(f"不支持的交易所: {exchange_name}")
+    raise ValueError(f"当前版本仅支持 Hyperliquid: {exchange_name}")
 
 
 def same_symbol(left: str, right: str) -> bool:

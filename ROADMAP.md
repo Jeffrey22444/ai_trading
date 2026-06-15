@@ -3,7 +3,7 @@
 ## Current Status
 
 - **Core Issues**: Over-conservative risk parameters, AI decision bias toward holding, lack of contextual information
-- **Tech Stack**: FastAPI + Next.js + Binance API + Multi-AI model support
+- **Tech Stack**: FastAPI + Next.js + Hyperliquid CCXT integration + Multi-AI model support
 
 ## Priority Areas
 

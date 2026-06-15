@@ -69,7 +69,7 @@ test_endpoint "/api/v1/cache/info" "缓存信息"
 echo "🔌 连接状态测试"
 echo
 
-test_endpoint "/api/v1/connection/status" "WebSocket连接状态"
+test_endpoint "/api/v1/connection/status" "Hyperliquid行情连接状态"
 
 echo "📚 API文档"
 echo "访问: $BASE_URL/docs"

@@ -1,25 +1,14 @@
+import pytest
+
 from config.agent_config import ExchangeConfig
 
 
-def test_binance_testnet_uses_demo_trading_instead_of_deprecated_sandbox():
-    exchange = ExchangeConfig(
-        name="binance_futures",
-        api_key="placeholder",
-        api_secret="placeholder",
-        testnet=True,
-        websocket_url="wss://fstream.binance.com/stream",
-        rest_api_url="https://fapi.binance.com",
-        testnet_websocket_url="wss://stream.binancefuture.com/stream",
-        testnet_rest_api_url="https://testnet.binancefuture.com",
-    )
-
-    ccxt_config = exchange.get_ccxt_config()
-
-    assert ccxt_config["options"]["enableDemoTrading"] is True
-    assert "sandbox" not in ccxt_config
+def test_non_hyperliquid_exchange_is_rejected():
+    with pytest.raises(ValueError, match="仅支持 Hyperliquid"):
+        ExchangeConfig(name="another_exchange")
 
 
-def test_hyperliquid_config_uses_wallet_credentials_without_binance_keys():
+def test_hyperliquid_config_uses_only_wallet_credentials():
     exchange = ExchangeConfig(
         name="hyperliquid",
         wallet_address="0xwallet",

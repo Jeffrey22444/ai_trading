@@ -34,7 +34,7 @@ cd frontend && pnpm install
 
 # Configure environment
 cp backend/.env.example backend/.env
-# Edit .env with your DeepSeek API key and Binance Key (defaults to DeepSeek)
+# Edit .env with your DeepSeek key and Hyperliquid testnet credentials
 
 # Start backend
 cd backend && uv run python main.py
@@ -51,15 +51,10 @@ By default, high-risk actions (starting/stopping the trading bot, resetting stra
 
 ## Supported Exchanges
 
-**Currently supports Binance Futures only**
+**Currently supports Hyperliquid perpetuals only.**
 
-- 🎁 **New User Bonus**: Use our referral link for cashback rewards
-- 🔗 **Registration**: https://accounts.maxweb.red/register?ref=899414088
-
-**Need other exchange support?**
-
-- Please submit a GitHub Issue describing your requirements
-- We'll develop support for other exchanges based on user demand priority
+Market data and order execution use Hyperliquid through CCXT. The default
+configuration targets testnet and keeps live opening disabled.
 
 ## Dashboard Preview
 
@@ -72,8 +67,8 @@ _Live trading dashboard showing real-time P&L tracking, AI decisions, and positi
 - **Backend**: FastAPI + SQLite + SQLAlchemy
 - **Frontend**: Next.js 14.0 + TypeScript + TailwindCSS
 - **AI**: Configurable providers (OpenAI, DeepSeek, Anthropic, etc.)
-- **Market Data**: Binance Futures WebSocket
-- **Trading**: Multi-exchange API integration
+- **Market Data**: Hyperliquid CCXT REST polling with shared K-line cache
+- **Trading**: Hyperliquid perpetuals through CCXT
 
 ## Key Features
 

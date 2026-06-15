@@ -240,5 +240,5 @@ GROUP BY json_extract(symbol_decisions, '$.BTCUSDT.execution_status');
 
 ### Configuration System
 - `agent_config.yaml`: Symbols, timeframes, model settings
-- Environment variable substitution (${OPENAI_API_KEY}, ${BINANCE_API_KEY})
+- Environment variable substitution (${OPENAI_API_KEY}, ${HYPERLIQUID_WALLET_ADDRESS})
 - Startup validation with immediate exit on configuration errors

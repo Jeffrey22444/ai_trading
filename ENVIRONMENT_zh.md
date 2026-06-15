@@ -39,25 +39,22 @@ agent:
 
 ### 交易所配置
 
-**Binance Futures**
+**Hyperliquid 测试网**
 ```bash
-BINANCE_API_KEY=your-binance-api-key-here
-BINANCE_API_SECRET=your-binance-api-secret-here
+HYPERLIQUID_WALLET_ADDRESS=你的主账户地址
+HYPERLIQUID_PRIVATE_KEY=已授权的API-Wallet私钥
 ```
 
-**如何获取 Binance API 凭证:**
-1. 访问 [Binance Futures](https://accounts.maxweb.red/register?ref=899414088) (使用邀请码享受返佣)
-2. 用户中心 → API 管理 → 创建 API
-3. **重要权限设置:**
-   - ✅ 启用 读取权限
-   - ✅ 启用 期货交易  
-   - ✅ 启用 通用转账 (如使用实盘交易)
-   - ❌ 禁用 现货和杠杆交易 (安全考虑)
+**如何配置 Hyperliquid 凭证:**
+1. 在 https://app.hyperliquid-testnet.xyz/ 连接主账户。
+2. 为该账户创建并授权 API Wallet。
+3. `HYPERLIQUID_WALLET_ADDRESS` 使用主账户地址。
+4. `HYPERLIQUID_PRIVATE_KEY` 只使用 API Wallet 私钥。
 
 **测试环境 (推荐):**
-- 使用 [Binance Testnet](https://testnet.binancefuture.com/)
-- 无真实资金风险
-- 与生产环境相同的 API 接口
+- 保持 `exchange.testnet: true` 和 `allow_live_trading: false`。
+- 为主账户领取测试网 USDC。
+- 启动定时决策前运行 `scripts/hyperliquid_acceptance.py`。
 
 ### 数据库配置
 
@@ -77,11 +74,10 @@ BINANCE_API_SECRET=your-binance-api-secret-here
 - 定期轮换 API keys
 - 使用最小必需权限
 
-### Binance API 安全
-- 如可能请启用 IP 限制
-- 开发时使用测试网
-- 从小仓位开始
-- 监控 API key 使用情况
+### Hyperliquid 钱包安全
+- 不要把主钱包私钥放入本项目。
+- 使用专用 API Wallet，并在需要时轮换。
+- 开发时使用测试网，并从小仓位开始。
 
 ## 完整 .env 文件示例
 
@@ -90,9 +86,9 @@ BINANCE_API_SECRET=your-binance-api-secret-here
 # 默认配置使用 DeepSeek
 OPENAI_API_KEY=your-api-key-here
 
-# 交易所
-BINANCE_API_KEY=abcdef123456...
-BINANCE_API_SECRET=xyz789secretkey...
+# Hyperliquid 测试网
+HYPERLIQUID_WALLET_ADDRESS=0x主账户地址
+HYPERLIQUID_PRIVATE_KEY=0x已授权API-Wallet私钥
 
 # 数据库 (可选覆盖)
 # DATABASE_URL=sqlite:///./alphatransformer.db
@@ -123,9 +119,9 @@ print(f'API Key 已配置: {bool(config.agent.api_key)}')
 - 确保使用正确的提供商端点
 
 **"Permission denied" 错误:**
-- 检查 Binance API 权限
-- 验证期货交易是否已启用
-- 先尝试测试网
+- 验证 API Wallet 已授权给配置的主账户
+- 验证主账户拥有测试网 USDC
+- 确认 `exchange.testnet` 已启用
 
 **环境变量未加载:**
 - 确保 .env 在 backend/ 目录中

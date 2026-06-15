@@ -6,7 +6,7 @@
 
 - Python 3.11+
 - OpenAI API key (for agent decisions)
-- Binance Futures API credentials
+- Hyperliquid testnet account address and API Wallet private key
 
 ## Installation
 
@@ -57,9 +57,9 @@ Edit the `.env` file with your API credentials:
 # AI Provider API Key (defaults to DeepSeek)
 OPENAI_API_KEY=your-api-key-here
 
-# Binance Futures API (required for trading)
-BINANCE_API_KEY=your-binance-api-key-here
-BINANCE_API_SECRET=your-binance-api-secret-here
+# Hyperliquid testnet (required for trading)
+HYPERLIQUID_WALLET_ADDRESS=your-main-account-address
+HYPERLIQUID_PRIVATE_KEY=your-authorized-api-wallet-private-key
 
 # Database (optional - uses SQLite by default)
 # DATABASE_URL=sqlite:///./alphatransformer.db
@@ -77,13 +77,12 @@ BINANCE_API_SECRET=your-binance-api-secret-here
        api_key: "${OPENAI_API_KEY}"
      ```
 
-2. **Binance API**: 
-   - **Register Binance**: https://accounts.maxweb.red/register?ref=899414088 (Use referral for cashback)
-   - Go to Binance Futures → API Management
-   - Create API key with "Enable Futures" permission
-   - ⚠️ **Important**: Enable "Permit Universal Transfer" if using real trading
-   - For testing: Use Binance Testnet (testnet.binancefuture.com)
-   - ❗ **Currently supports Binance Futures only**, submit Issue for other exchanges
+2. **Hyperliquid testnet**:
+   - Connect the main account at https://app.hyperliquid-testnet.xyz/
+   - Create and authorize an API Wallet for the account.
+   - Put the main account address in `HYPERLIQUID_WALLET_ADDRESS`.
+   - Put only the authorized API Wallet private key in `HYPERLIQUID_PRIVATE_KEY`.
+   - Fund the account with testnet USDC before acceptance testing.
 
 **Note**: The system automatically reads environment variables from .env file and replaces ${VAR_NAME} placeholders in config files.
 
@@ -102,8 +101,8 @@ agent:
   api_key: "${OPENAI_API_KEY}"  # or "${DEEPSEEK_API_KEY}"
   decision_interval: 180
   symbols:
-    - BTCUSDT
-    - ETHUSDT
+    - BTC
+    - ETH
 
 default_risk:
   max_position_size_percent: 0.1
@@ -127,7 +126,7 @@ uv run python main.py
 The agent will:
 1. Connect to market data feeds
 2. Start making trading decisions every 60 seconds
-3. Execute trades through Binance Futures
+3. Execute trades through Hyperliquid testnet
 4. Log all decisions and executions
 
 ### 3. Start Frontend Dashboard
@@ -205,7 +204,7 @@ For testing, enable paper trading in the configuration:
 
 ```yaml
 exchange:
-  testnet: true  # Use Binance testnet
+  testnet: true  # Use Hyperliquid testnet
 ```
 
 ### Risk Controls
@@ -235,7 +234,7 @@ logging:
 - Check market data connection
 
 **Orders failing:**
-- Verify Binance API permissions
+- Verify the API Wallet is authorized for the configured account
 - Check account balance
 - Review risk limit settings
 

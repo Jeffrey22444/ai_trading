@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import List
+from datetime import datetime, timedelta
+from typing import Callable, List
 
 import ccxt
 
@@ -18,13 +18,21 @@ logger = logging.getLogger("AlphaTransformer")
 class HyperliquidMarketClient:
     """Fetch Hyperliquid testnet OHLCV and keep the shared cache current."""
 
-    def __init__(self, exchange=None, testnet: bool | None = None, poll_interval=30):
+    def __init__(
+        self,
+        exchange=None,
+        testnet: bool | None = None,
+        poll_interval=30,
+        clock: Callable[[], datetime] = datetime.now,
+    ):
         self.testnet = config.exchange.testnet if testnet is None else testnet
         self.exchange = exchange or ccxt.hyperliquid(
             {"enableRateLimit": True, "options": {"defaultType": "swap"}}
         )
         self.exchange.set_sandbox_mode(self.testnet)
         self.poll_interval = poll_interval
+        self.clock = clock
+        self.freshness_threshold = max(poll_interval * 3, 90)
         self.symbols = config.agent.symbols
         self.timeframes = config.agent.timeframes
         self.is_connected = False
@@ -41,6 +49,7 @@ class HyperliquidMarketClient:
             self.exchange.fetch_ohlcv, exchange_symbol, interval, limit=limit
         )
         duration_ms = self.exchange.parse_timeframe(interval) * 1000
+        now_ms = int(self.clock().timestamp() * 1000)
         logical_symbol = from_exchange_symbol(symbol)
         return [
             Kline(
@@ -57,20 +66,23 @@ class HyperliquidMarketClient:
                 trades_count=0,
                 taker_buy_base_volume=0.0,
                 taker_buy_quote_volume=0.0,
-                is_final=True,
+                is_final=row[0] + duration_ms <= now_ms,
             )
             for row in rows
         ]
 
     async def refresh_once(self, limit: int = 100) -> None:
-        for symbol in self.symbols:
-            for timeframe in self.timeframes:
-                klines = await self.get_klines(symbol, timeframe, limit)
-                for kline in klines:
-                    await kline_cache.add_kline(kline)
+        requests = [
+            self.get_klines(symbol, timeframe, limit)
+            for symbol in self.symbols
+            for timeframe in self.timeframes
+        ]
+        for klines in await asyncio.gather(*requests):
+            for kline in klines:
+                await kline_cache.add_kline(kline)
         self.connection_status.connected = True
         self.connection_status.error_message = None
-        self.connection_status.last_message = datetime.now()
+        self.connection_status.last_message = self.clock()
 
     async def initialize_historical_data(self) -> None:
         await self.refresh_once(limit=100)
@@ -88,10 +100,8 @@ class HyperliquidMarketClient:
             self.connection_status.error_message = str(exc)
             return False
 
-    async def subscribe_all(self) -> None:
-        """Compatibility no-op for the existing application lifecycle."""
-
-    async def start_message_loop(self) -> None:
+    async def run_polling_loop(self) -> None:
+        """Refresh configured Hyperliquid markets until disconnected."""
         while self.is_connected:
             try:
                 await asyncio.sleep(self.poll_interval)
@@ -99,7 +109,6 @@ class HyperliquidMarketClient:
                     await self.refresh_once(limit=2)
             except Exception as exc:
                 logger.error("Hyperliquid 行情轮询失败: %s", exc)
-                self.connection_status.connected = False
                 self.connection_status.error_message = str(exc)
                 self.connection_status.reconnect_count += 1
 
@@ -111,4 +120,11 @@ class HyperliquidMarketClient:
         await self.disconnect()
 
     def get_status(self) -> ConnectionStatus:
+        last_message = self.connection_status.last_message
+        self.connection_status.connected = bool(
+            self.is_connected
+            and last_message
+            and self.clock() - last_message
+            <= timedelta(seconds=self.freshness_threshold)
+        )
         return self.connection_status

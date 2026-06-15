@@ -6,7 +6,7 @@
 
 - Python 3.11+
 - OpenAI API key (用于 AI 交易决策)
-- Binance Futures API 凭证
+- Hyperliquid 测试网主账户地址和 API Wallet 私钥
 
 ## 安装步骤
 
@@ -57,9 +57,9 @@ cp .env.example .env
 # AI 提供商 API Key (默认使用 DeepSeek)
 OPENAI_API_KEY=your-deepseek-api-key-here
 
-# Binance Futures API (交易必需)
-BINANCE_API_KEY=your-binance-api-key-here
-BINANCE_API_SECRET=your-binance-api-secret-here
+# Hyperliquid 测试网（交易必需）
+HYPERLIQUID_WALLET_ADDRESS=你的主账户地址
+HYPERLIQUID_PRIVATE_KEY=已授权的API-Wallet私钥
 
 # 数据库配置 (可选 - 默认使用 SQLite)
 # DATABASE_URL=sqlite:///./alphatransformer.db
@@ -77,13 +77,12 @@ BINANCE_API_SECRET=your-binance-api-secret-here
        api_key: "${OPENAI_API_KEY}"
      ```
 
-2. **Binance API**: 
-   - **注册 Binance**: https://accounts.maxweb.red/register?ref=899414088 (享受返佣优惠)
-   - 进入 Binance Futures → API 管理
-   - 创建 API key 并启用 "期货交易" 权限
-   - ⚠️ **重要**: 如使用实盘交易需启用 "通用转账" 权限
-   - 测试环境: 使用 Binance Testnet (testnet.binancefuture.com)
-   - ❗ **目前仅支持 Binance Futures**，如需其他交易所请提交 Issue
+2. **Hyperliquid 测试网**:
+   - 在 https://app.hyperliquid-testnet.xyz/ 连接主账户。
+   - 为该账户创建并授权 API Wallet。
+   - `HYPERLIQUID_WALLET_ADDRESS` 填写主账户地址。
+   - `HYPERLIQUID_PRIVATE_KEY` 只填写已授权 API Wallet 的私钥。
+   - 验收前领取测试网 USDC。
 
 **注意**: 系统会自动读取.env文件中的环境变量并替换配置文件中的${VAR_NAME}占位符。
 
@@ -102,8 +101,8 @@ agent:
   api_key: "${OPENAI_API_KEY}"  # 或 "${DEEPSEEK_API_KEY}"
   decision_interval: 180
   symbols:
-    - BTCUSDT
-    - ETHUSDT
+    - BTC
+    - ETH
 
 default_risk:
   max_position_size_percent: 0.1
@@ -127,7 +126,7 @@ uv run python main.py
 代理会：
 1. 连接市场数据源
 2. 每 60 秒进行一次交易决策
-3. 通过 Binance Futures 执行交易
+3. 通过 Hyperliquid 测试网执行交易
 4. 记录所有决策和执行过程
 
 ### 3. 启动前端面板
@@ -205,7 +204,7 @@ agent:
 
 ```yaml
 exchange:
-  testnet: true  # 使用 Binance 测试网
+  testnet: true  # 使用 Hyperliquid 测试网
 ```
 
 ### 风险控制
@@ -235,7 +234,7 @@ logging:
 - 检查市场数据连接
 
 **订单执行失败:**
-- 验证 Binance API 权限
+- 验证 API Wallet 已授权给配置的主账户
 - 检查账户余额
 - 审查风险限制设置
 

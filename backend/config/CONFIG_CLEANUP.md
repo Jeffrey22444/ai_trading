@@ -17,23 +17,21 @@
 ### Agent配置
 ```yaml
 agent:
-  model_name: "gpt-4"
+  model_name: "deepseek-chat"
   api_key: "${OPENAI_API_KEY}"
   decision_interval: 180
-  symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
-  timeframes: ["1m", "3m", "5m", "15m", "1h", "4h"]
-  system_prompt: "..."
+  symbols: [BTC, ETH, SOL]
+  timeframes: ["3m", "1h", "4h"]
 ```
 
 ### 交易所配置
 ```yaml
 exchange:
-  name: "binance_futures"
-  api_key: "${BINANCE_API_KEY}"
-  api_secret: "${BINANCE_API_SECRET}"
-  testnet: false
-  websocket_url: "wss://fstream.binance.com/stream"
-  rest_api_url: "https://fapi.binance.com"
+  name: "hyperliquid"
+  wallet_address: "${HYPERLIQUID_WALLET_ADDRESS}"
+  private_key: "${HYPERLIQUID_PRIVATE_KEY}"
+  testnet: true
+  allow_live_trading: false
 ```
 
 ### 其他配置
@@ -44,7 +42,7 @@ exchange:
 
 ## 环境变量支持
 - `${OPENAI_API_KEY}` → 从.env文件读取
-- `${BINANCE_API_KEY}` → 从.env文件读取
+- `${HYPERLIQUID_WALLET_ADDRESS}` 和 `${HYPERLIQUID_PRIVATE_KEY}` → 从.env文件读取
 - 自动替换，支持自定义环境变量
 
 ## 使用方式
@@ -54,7 +52,7 @@ from config.settings import config
 # 获取配置
 symbols = config.agent.symbols
 timeframes = config.agent.timeframes
-api_url = config.exchange.get_rest_api_url()
+testnet = config.exchange.testnet
 ```
 
 ## 优势

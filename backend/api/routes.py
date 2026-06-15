@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from market.data_cache import kline_cache
-from market.websocket_client import ws_client
+from market.market_data_client import market_data_client
 from agent.workflow import create_trading_workflow
 from agent.tools.analysis_tools import create_tech_analysis_tool
 from agent.models import analysis_service
@@ -28,7 +28,7 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: datetime
     uptime_seconds: int
-    websocket_connected: bool
+    market_data_connected: bool
     total_symbols: int
     active_timeframes: int
 
@@ -52,14 +52,14 @@ class CacheInfoResponse(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """System health check. websocket_connected represents market-data freshness."""
-    status = ws_client.get_status()
+    """System health check."""
+    status = market_data_client.get_status()
     
     return HealthResponse(
         status="healthy" if status.connected else "unhealthy",
         timestamp=datetime.now(),
         uptime_seconds=0,  # TODO: Implement uptime calculation
-        websocket_connected=status.connected,
+        market_data_connected=status.connected,
         total_symbols=len(config.agent.symbols),
         active_timeframes=len(config.agent.timeframes)
     )
@@ -154,7 +154,7 @@ async def get_cache_info():
 @router.get("/connection/status")
 async def get_connection_status():
     """Get connection status"""
-    status = ws_client.get_status()
+    status = market_data_client.get_status()
     return {
         "exchange": status.exchange,
         "connected": status.connected,
@@ -177,8 +177,8 @@ async def get_system_config():
         "exchange": {
             "name": config.exchange.name,
             "testnet": config.exchange.testnet,
-            "websocket_url": config.exchange.get_websocket_url(),
-            "rest_api_url": config.exchange.get_rest_api_url()
+            "market_data_mode": "ccxt_rest_polling",
+            "poll_interval_seconds": market_data_client.poll_interval,
         },
         "system": {
             "host": config.system.host,

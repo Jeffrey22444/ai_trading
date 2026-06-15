@@ -1,9 +1,9 @@
 """
 FastAPI main application
 """
-import os
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -15,12 +15,11 @@ env_file = backend_dir / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 
-from api.routes import router
-from database.database import init_database, close_database
-from market.websocket_client import ws_client
-from market.api_client import api_client
-from utils.logger import setup_logger
-from config.settings import config
+from api.routes import router  # noqa: E402
+from database.database import init_database, close_database  # noqa: E402
+from market.market_data_client import market_data_client  # noqa: E402
+from utils.logger import setup_logger  # noqa: E402
+from config.settings import config  # noqa: E402
 
 
 # Setup logging
@@ -30,6 +29,7 @@ logger = setup_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle management"""
+    polling_task = None
     # Execute on startup
     logger.info("Starting AlphaTransformer AI Trading System...")
     
@@ -61,22 +61,20 @@ async def lifespan(app: FastAPI):
     
     # Initialize historical data (Phase 3 components)
     try:
-        await api_client.initialize_historical_data()
+        await market_data_client.initialize_historical_data()
         logger.info("历史数据初始化完成")
     except Exception as e:
         logger.error(f"历史数据初始化失败: {e}")
     
-    # Connect WebSocket (Phase 3 components)
+    # Start Hyperliquid market-data polling.
     try:
-        if await ws_client.connect():
-            await ws_client.subscribe_all()
-            import asyncio
-            asyncio.create_task(ws_client.start_message_loop())
-            logger.info("WebSocket连接和订阅成功")
+        if await market_data_client.connect():
+            polling_task = asyncio.create_task(market_data_client.run_polling_loop())
+            logger.info("Hyperliquid 行情轮询启动成功")
         else:
-            logger.error("WebSocket连接失败")
+            logger.error("Hyperliquid 行情轮询启动失败")
     except Exception as e:
-        logger.error(f"WebSocket连接异常: {e}")
+        logger.error(f"Hyperliquid 行情轮询异常: {e}")
     
     logger.info("🚀 AlphaTransformer 系统启动完成")
     
@@ -84,8 +82,11 @@ async def lifespan(app: FastAPI):
     
     # Execute on shutdown
     logger.info("正在关闭系统...")
-    await ws_client.disconnect()
-    await api_client.close()
+    await market_data_client.close()
+    if polling_task:
+        polling_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await polling_task
     await close_database()
     logger.info("系统关闭完成")
 
@@ -154,16 +155,6 @@ async def root():
         "docs": "/docs",
         "health": "/api/v1/health",
         "status": "running"
-    }
-
-
-@app.get("/api/v1/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": "2025-01-01T00:00:00Z",
-        "version": "1.0.0"
     }
 
 

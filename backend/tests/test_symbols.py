@@ -8,8 +8,9 @@ def test_hyperliquid_symbol_mapping_uses_usdc_perpetual(symbol):
     assert to_exchange_symbol(symbol, "hyperliquid") == "BTC/USDC:USDC"
 
 
-def test_binance_symbol_mapping_keeps_usdt_perpetual():
-    assert to_exchange_symbol("BTC", "binance_futures") == "BTC/USDT:USDT"
+def test_non_hyperliquid_exchange_is_rejected():
+    with pytest.raises(ValueError, match="仅支持 Hyperliquid"):
+        to_exchange_symbol("BTC", "another_exchange")
 
 
 @pytest.mark.parametrize(

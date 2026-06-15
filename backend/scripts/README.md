@@ -52,8 +52,8 @@ python scripts/test_agent.py
 在 `backend/.env` 文件中设置:
 ```
 OPENAI_API_KEY=你的OpenAI_API密钥
-BINANCE_API_KEY=你的Binance_API密钥
-BINANCE_API_SECRET=你的Binance_API密钥
+HYPERLIQUID_WALLET_ADDRESS=你的Hyperliquid测试网主账户地址
+HYPERLIQUID_PRIVATE_KEY=已授权的API-Wallet私钥
 ```
 
 ### 选项 2: 直接在脚本中设置

@@ -1,6 +1,6 @@
 # AlphaTransformer
 
-Real-time cryptocurrency market data monitoring service - High-performance market data system based on Python FastAPI and WebSocket
+Hyperliquid cryptocurrency market-data monitoring service based on Python FastAPI and CCXT REST polling.
 
 ## Quick Start
 

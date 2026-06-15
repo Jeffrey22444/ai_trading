@@ -34,7 +34,7 @@ cd frontend && pnpm install
 
 # 配置环境变量
 cp backend/.env.example backend/.env
-# 编辑 .env 文件，添加你的 DeepSeek API key 和 Binance Key (默认使用 DeepSeek)
+# 编辑 .env 文件，添加 DeepSeek Key 和 Hyperliquid 测试网凭证
 
 # 启动后端
 cd backend && uv run python main.py
@@ -51,15 +51,9 @@ cd frontend && pnpm run dev
 
 ## 支持的交易所
 
-**当前仅支持 Binance Futures**
+**当前仅支持 Hyperliquid 永续合约。**
 
-- 🎁 **新用户福利**: 使用我们的邀请码享受返佣优惠
-- 🔗 **注册链接**: https://accounts.maxweb.red/register?ref=899414088
-
-**需要其他交易所支持？**
-
-- 请在 GitHub 提交 Issue 说明需求
-- 我们会根据用户需求优先级开发其他交易所支持
+行情和交易执行均通过 CCXT 连接 Hyperliquid。默认配置使用测试网，并禁用自动开仓。
 
 ## 交易面板预览
 
@@ -72,8 +66,8 @@ _实时交易面板，显示实时盈亏跟踪、AI 决策和持仓监控_
 - **后端**: FastAPI + SQLite + SQLAlchemy
 - **前端**: Next.js 14.0 + TypeScript + TailwindCSS
 - **AI 引擎**: 可配置多种 AI 提供商 (OpenAI, DeepSeek, Anthropic 等)
-- **市场数据**: Binance Futures WebSocket
-- **交易执行**: 多交易所 API 集成
+- **市场数据**: Hyperliquid CCXT REST 轮询和共享 K 线缓存
+- **交易执行**: 通过 CCXT 执行 Hyperliquid 永续合约交易
 
 ## 核心功能
 

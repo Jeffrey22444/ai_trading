@@ -9,7 +9,7 @@ Response: {
   "status": "running" | "stopped" | "error",
   "uptime": 3600,
   "last_decision": "2024-01-01T12:00:00Z",
-  "connected_exchanges": ["binance_futures"],
+  "connected_exchanges": ["hyperliquid"],
   "active_symbols": ["BTCUSDT", "ETHUSDT"]
 }
 ```
@@ -84,7 +84,7 @@ Response: {
       "symbol": "BTCUSDT",
       "quantity": 0.1,
       "price": 42000.0,
-      "order_id": "binance_order_123",
+      "order_id": "hyperliquid_order_123",
       "status": "FILLED",
       "execution_price": 42000.5,
       "fees": 0.42,
@@ -308,7 +308,7 @@ Authorization: Bearer <api_key>
 ## Data Validation Rules
 
 ### Request Parameters
-- `symbol`: Valid Binance Futures symbol
+- `symbol`: Valid Hyperliquid perpetual symbol
 - `action`: Must be one of BUY, SELL, HOLD
 - `quantity`: Positive number, max 8 decimal places
 - `price`: Positive number, max 8 decimal places

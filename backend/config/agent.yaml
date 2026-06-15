@@ -57,8 +57,6 @@ exchange:
   enable_rate_limit: true
   timeout: 10000  # milliseconds
   retries: 3
-  sandbox: true
-  
 # Risk Management (these can be overridden in user prompts)
 default_risk:
   max_position_size_percent: 0.2  # 20% of available balance per position

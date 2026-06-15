@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 def is_missing_secret(value: str) -> bool:
@@ -64,16 +64,10 @@ class AgentConfig(BaseModel):
 
 class ExchangeConfig(BaseModel):
     name: str
-    api_key: str = ""
-    api_secret: str = ""
     wallet_address: str = ""
     private_key: str = ""
     testnet: bool = True
     allow_live_trading: bool = False
-    websocket_url: str = ""
-    rest_api_url: str = ""
-    testnet_websocket_url: str = ""
-    testnet_rest_api_url: str = ""
 
     # Futures trading settings (for CCXT)
     default_leverage: int = 1
@@ -81,62 +75,32 @@ class ExchangeConfig(BaseModel):
     enable_rate_limit: bool = True
     timeout: int = 10000  # milliseconds
     retries: int = 3
-    sandbox: bool = False  # CCXT sandbox mode
-
-    def get_websocket_url(self) -> str:
-        """获取当前环境对应的WebSocket URL"""
-        return self.testnet_websocket_url if self.testnet else self.websocket_url
-
-    def get_rest_api_url(self) -> str:
-        """获取当前环境对应的REST API URL"""
-        return self.testnet_rest_api_url if self.testnet else self.rest_api_url
+    @field_validator("name")
+    @classmethod
+    def require_hyperliquid(cls, value: str) -> str:
+        if value.lower() != "hyperliquid":
+            raise ValueError("当前版本仅支持 Hyperliquid")
+        return "hyperliquid"
 
     def get_ccxt_config(self) -> Dict[str, Any]:
         """获取CCXT交易所配置（用于期货交易）"""
-        if self.name.lower() == "hyperliquid":
-            return {
-                "walletAddress": self.wallet_address,
-                "privateKey": self.private_key,
-                "enableRateLimit": self.enable_rate_limit,
-                "timeout": self.timeout,
-                "retries": self.retries,
-                "options": {
-                    "defaultType": "swap",
-                },
-            }
-
-        config = {
-            "apiKey": self.api_key,
-            "secret": self.api_secret,
+        return {
+            "walletAddress": self.wallet_address,
+            "privateKey": self.private_key,
             "enableRateLimit": self.enable_rate_limit,
             "timeout": self.timeout,
             "retries": self.retries,
             "options": {
-                "defaultType": "future",  # 使用期货交易
+                "defaultType": "swap",
             },
         }
 
-        # Binance Futures sandbox endpoints are deprecated in current CCXT.
-        # testnet is mapped to Binance Demo Trading by the exchange client.
-        if self.testnet and "binance" in self.name.lower():
-            config["options"]["enableDemoTrading"] = True
-        elif self.sandbox:
-            config["sandbox"] = True
-
-        return config
-
     def missing_credential_env_vars(self) -> list[str]:
         """Return missing credential names for the selected exchange."""
-        if self.name.lower() == "hyperliquid":
-            required = (
-                ("HYPERLIQUID_WALLET_ADDRESS", self.wallet_address),
-                ("HYPERLIQUID_PRIVATE_KEY", self.private_key),
-            )
-        else:
-            required = (
-                ("BINANCE_API_KEY", self.api_key),
-                ("BINANCE_API_SECRET", self.api_secret),
-            )
+        required = (
+            ("HYPERLIQUID_WALLET_ADDRESS", self.wallet_address),
+            ("HYPERLIQUID_PRIVATE_KEY", self.private_key),
+        )
         return [name for name, value in required if is_missing_secret(value)]
 
 

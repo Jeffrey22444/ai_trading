@@ -32,7 +32,7 @@
 - **So that** I can make informed trading decisions based on current market conditions
 
 **Acceptance Criteria:**
-- WebSocket connection to Binance Futures for live data
+- CCXT polling connection to Hyperliquid for current market data
 - K-line data caching system with memory management
 - Technical analysis using TA-Lib (EMA, MACD, RSI, Bollinger Bands)
 - Unified tool combining market data + technical analysis
@@ -40,7 +40,7 @@
 - Automatic reconnection on connection failures
 
 **Technical Requirements:**
-- Binance WebSocket client implementation
+- Hyperliquid market-data client implementation
 - Redis-like caching using Python collections
 - TA-Lib integration for technical indicators
 - Async data processing with proper error handling
@@ -53,7 +53,7 @@
 - **So that** trading strategies can be executed automatically without manual intervention
 
 **Acceptance Criteria:**
-- Order placement through Binance Futures API
+- Order placement through the Hyperliquid API
 - Position tracking and reconciliation
 - Risk management controls (position sizing, stop-loss)
 - Trade execution confirmation and recording
@@ -61,7 +61,7 @@
 - Manual override capability
 
 **Technical Requirements:**
-- Binance REST API integration for trading
+- Hyperliquid CCXT integration for trading
 - Order management system with status tracking
 - Position synchronization with exchange
 - Risk parameter enforcement
@@ -138,13 +138,13 @@
 ## Constraints & Assumptions
 
 ### Constraints
-- Must use Binance Futures as the exchange
+- Must use Hyperliquid perpetuals as the exchange
 - Limited to derivatives trading (not spot)
 - Single account operation (no multi-tenant)
 - Python-based implementation
 
 ### Assumptions
-- User has valid Binance Futures account
+- User has a funded Hyperliquid testnet account and authorized API Wallet
 - Market data feeds are reliable during trading hours
 - TA-Lib indicators provide sufficient signal quality
 - User understands trading risks involved

@@ -67,15 +67,17 @@ def create_trading_graph():
 
 ## Exchange API Best Practices
 
-### Decision: Binance Futures API with Comprehensive Error Handling
+### Decision: Hyperliquid Perpetuals Through CCXT
 
-**Rationale**: Binance provides the most reliable and well-documented API for crypto futures trading with robust rate limiting and comprehensive market data.
+**Rationale**: A single Hyperliquid boundary keeps market data, positions, and
+order execution consistent. CCXT provides a tested adapter while preserving a
+small exchange-specific surface.
 
 **Key Findings**:
-- **Rate Limits**: 1200 requests per minute for trading endpoints, sufficient for our use case
+- **Market Data**: Poll OHLCV through CCXT and keep a shared K-line cache
 - **Order Types**: Support for market, limit, stop-loss, and take-profit orders
-- **Position Tracking**: Real-time position updates via WebSocket streams
-- **Error Codes**: Comprehensive error codes for different failure scenarios
+- **Position Tracking**: Query the Hyperliquid account through CCXT
+- **Failure Handling**: Retry transient polling errors and expose freshness health
 
 **Safety Practices**:
 - **Order Size Validation**: Always validate order quantities against account balance
@@ -119,7 +121,7 @@ Agent Decision Loop:
 ```
 
 **Position Management Strategy**:
-- **Real-time Sync**: Use WebSocket for position updates
+- **Position Sync**: Query current Hyperliquid positions before each decision cycle
 - **Local Caching**: Cache positions for quick agent access
 - **Reconciliation**: Periodic reconciliation with exchange data
 - **Error Recovery**: Handle position desynchronization gracefully

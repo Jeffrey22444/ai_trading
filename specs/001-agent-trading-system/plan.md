@@ -11,7 +11,7 @@ AI-powered autonomous trading system similar to nof1.ai using Agent-Tools archit
 - **Database**: SQLite with SQLAlchemy ORM
 - **AI Framework**: LangGraph + OpenAI API
 - **Technical Analysis**: TA-Lib
-- **Market Data**: Binance WebSocket & REST APIs
+- **Market Data**: Hyperliquid OHLCV through CCXT REST polling
 - **Configuration**: YAML with environment variable substitution
 - **Package Management**: uv
 
@@ -39,7 +39,7 @@ AlphaTransformer/
 │   ├── market/             # Market data system
 │   │   ├── types.py        # Data types
 │   │   ├── data_cache.py   # K-line data caching
-│   │   ├── api_client.py   # REST API client
+│   │   ├── hyperliquid_market.py   # Hyperliquid OHLCV client
 │   │   └── websocket_client.py # WebSocket client
 │   ├── trading/            # Trading execution
 │   │   ├── __init__.py
@@ -96,7 +96,7 @@ AlphaTransformer/
 - Error handling and response formats
 
 ### Phase 3: User Story 2 - Real-time Market Data Processing
-- Connect to Binance WebSocket for real-time data
+- Connect to Hyperliquid through CCXT and keep the K-line cache fresh
 - Implement K-line data caching system
 - Add data validation and quality checks
 - Create unified market data access interface
@@ -156,8 +156,8 @@ AlphaTransformer/
 
 ### Environment Variables
 - `OPENAI_API_KEY`: OpenAI API key
-- `BINANCE_API_KEY`: Binance API key
-- `BINANCE_API_SECRET`: Binance API secret
+- `HYPERLIQUID_WALLET_ADDRESS`: Hyperliquid main account address
+- `HYPERLIQUID_PRIVATE_KEY`: Authorized API Wallet private key
 
 ### Configuration Files
 - `config/agent.yaml`: Main configuration with all settings

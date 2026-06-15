@@ -39,26 +39,22 @@ agent:
 
 ### Trading Exchange Configuration
 
-**Binance Futures**
+**Hyperliquid Testnet**
 ```bash
-BINANCE_API_KEY=your-binance-api-key-here
-BINANCE_API_SECRET=your-binance-api-secret-here
+HYPERLIQUID_WALLET_ADDRESS=your-main-account-address
+HYPERLIQUID_PRIVATE_KEY=your-authorized-api-wallet-private-key
 ```
 
-**How to get Binance API credentials:**
-1. Visit [Binance Registration](https://accounts.maxweb.red/register?ref=899414088) (Use referral for cashback)
-2. Go to Binance Futures → User Center → API Management
-3. Create new API key
-4. **Important permissions:**
-   - ✅ Enable Reading
-   - ✅ Enable Futures  
-   - ✅ Enable Universal Transfer (if using real trading)
-   - ❌ Disable Spot & Margin Trading (for security)
+**How to configure Hyperliquid credentials:**
+1. Connect the main account at https://app.hyperliquid-testnet.xyz/
+2. Create and authorize an API Wallet for that account.
+3. Use the main account address as `HYPERLIQUID_WALLET_ADDRESS`.
+4. Use only the API Wallet private key as `HYPERLIQUID_PRIVATE_KEY`.
 
 **For Testing (Recommended):**
-- Use [Binance Testnet](https://testnet.binancefuture.com/)
-- No real money at risk
-- Same API interface as production
+- Keep `exchange.testnet: true` and `allow_live_trading: false`.
+- Fund the main account with testnet faucet USDC.
+- Run `scripts/hyperliquid_acceptance.py` before enabling scheduled decisions.
 
 ### Database Configuration
 
@@ -78,11 +74,10 @@ BINANCE_API_SECRET=your-binance-api-secret-here
 - Rotate API keys regularly
 - Use minimal required permissions
 
-### Binance API Security
-- Enable IP restrictions if possible
-- Use testnet for development
-- Start with small position sizes
-- Monitor API key usage
+### Hyperliquid Wallet Security
+- Never put the main wallet private key in this project.
+- Authorize a dedicated API Wallet and rotate it when needed.
+- Use testnet during development and keep position sizes small.
 
 ## Example Complete .env File
 
@@ -91,9 +86,9 @@ BINANCE_API_SECRET=your-binance-api-secret-here
 # Default configuration uses DeepSeek
 OPENAI_API_KEY=your-api-key-here
 
-# Trading Exchange
-BINANCE_API_KEY=abcdef123456...
-BINANCE_API_SECRET=xyz789secretkey...
+# Hyperliquid testnet
+HYPERLIQUID_WALLET_ADDRESS=0x-main-account-address
+HYPERLIQUID_PRIVATE_KEY=0x-authorized-api-wallet-private-key
 
 # Database (optional override)
 # DATABASE_URL=sqlite:///./alphatransformer.db
@@ -124,9 +119,9 @@ print(f'API Key configured: {bool(config.agent.api_key)}')
 - Ensure correct provider endpoints
 
 **"Permission denied" errors:**
-- Check Binance API permissions
-- Verify futures trading is enabled
-- Try with testnet first
+- Verify the API Wallet is authorized for the configured account
+- Verify the main account has testnet USDC
+- Confirm `exchange.testnet` is enabled
 
 **Environment variables not loading:**
 - Ensure .env is in backend/ directory

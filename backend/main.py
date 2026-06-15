@@ -5,8 +5,7 @@ import asyncio
 import signal
 import sys
 
-from market.websocket_client import ws_client
-from market.api_client import api_client
+from market.market_data_client import market_data_client
 from utils.logger import setup_logger
 from config.settings import config
 
@@ -25,25 +24,20 @@ async def main():
     try:
         # Initialize historical data
         logger.info("Initializing historical data...")
-        await api_client.initialize_historical_data()
+        await market_data_client.initialize_historical_data()
         
-        # Connect WebSocket
-        logger.info("Connecting WebSocket...")
-        if await ws_client.connect():
-            # Subscribe all symbols
-            await ws_client.subscribe_all()
-            
-            # Start message loop
-            message_loop_task = asyncio.create_task(ws_client.start_message_loop())
+        logger.info("Starting Hyperliquid market-data polling...")
+        if await market_data_client.connect():
+            polling_task = asyncio.create_task(market_data_client.run_polling_loop())
             
             logger.info("✅ AlphaTransformer started successfully!")
             logger.info("Press Ctrl+C to stop service")
             
             # Wait for signal
-            await message_loop_task
+            await polling_task
         
         else:
-            logger.error("❌ WebSocket connection failed")
+            logger.error("❌ Hyperliquid market-data polling failed")
             sys.exit(1)
     
     except KeyboardInterrupt:
@@ -54,8 +48,7 @@ async def main():
     
     finally:
         # Cleanup resources
-        await ws_client.disconnect()
-        await api_client.close()
+        await market_data_client.close()
         logger.info("Service stopped")
 
 
@@ -68,8 +61,7 @@ def signal_handler():
 async def shutdown():
     """Graceful shutdown"""
     logger.info("Gracefully shutting down...")
-    await ws_client.disconnect()
-    await api_client.close()
+    await market_data_client.close()
     sys.exit(0)
 
 

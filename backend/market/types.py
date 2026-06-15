@@ -86,12 +86,3 @@ class MarketSnapshot:
     def __post_init__(self):
         if self.indicators is None:
             self.indicators = {}
-
-
-@dataclass
-class WebSocketMessage:
-    """WebSocket message structure"""
-    stream: str
-    data: dict
-    timestamp: datetime
-    message_type: str = "kline"  # kline, trade, ticker, etc.

@@ -44,12 +44,12 @@ Create `backend/.env` from `backend/.env.example`, then set:
 
 ```dotenv
 OPENAI_API_KEY=<DeepSeek API key>
-HYPERLIQUID_WALLET_ADDRESS=<dedicated Hyperliquid testnet wallet address>
-HYPERLIQUID_PRIVATE_KEY=<dedicated Hyperliquid testnet wallet private key>
+HYPERLIQUID_WALLET_ADDRESS=<Hyperliquid testnet main account address>
+HYPERLIQUID_PRIVATE_KEY=<authorized API Wallet private key>
 ```
 
-Fund the dedicated wallet with Hyperliquid testnet faucet USDC before final
-validation. Never reuse a funded mainnet wallet private key.
+Fund the main testnet account with faucet USDC before final validation. Never
+put the main wallet private key in this project.
 
 ## Verification Commands
 
