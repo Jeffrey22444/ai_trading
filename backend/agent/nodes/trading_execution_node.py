@@ -7,7 +7,7 @@ from datetime import datetime
 
 from agent.state import AgentState
 from trading.binance_futures import get_trader
-from trading.position_service import get_position_service
+from trading.risk_guard import validate_open_decision
 from config.settings import config
 
 logger = logging.getLogger("AlphaTransformer")
@@ -18,7 +18,6 @@ async def trading_execution_node(state: AgentState) -> AgentState:
     try:
         symbol_decisions = state["symbol_decisions"]
         trader = get_trader()
-        position_service = get_position_service()
         
         logger.info(f"开始执行真实期货交易: {len(symbol_decisions)} 个标的")
         
@@ -179,6 +178,18 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
+
+    validate_open_decision(
+        action="OPEN_LONG",
+        position_size_usd=position_size_usd,
+        current_price=current_price,
+        stop_loss_price=stop_loss_price,
+        take_profit_price=take_profit_price,
+        available_balance=balance.available_balance,
+        max_position_size_percent=config.default_risk.max_position_size_percent,
+        testnet=config.exchange.testnet,
+        allow_live_trading=config.exchange.allow_live_trading,
+    )
     
     # 执行开多仓（含止损止盈）
     await trader.open_long(symbol, quantity, leverage, stop_loss_price, take_profit_price)
@@ -207,6 +218,18 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
+
+    validate_open_decision(
+        action="OPEN_SHORT",
+        position_size_usd=position_size_usd,
+        current_price=current_price,
+        stop_loss_price=stop_loss_price,
+        take_profit_price=take_profit_price,
+        available_balance=balance.available_balance,
+        max_position_size_percent=config.default_risk.max_position_size_percent,
+        testnet=config.exchange.testnet,
+        allow_live_trading=config.exchange.allow_live_trading,
+    )
     
     # 执行开空仓（含止损止盈）
     await trader.open_short(symbol, quantity, leverage, stop_loss_price, take_profit_price)
@@ -260,5 +283,3 @@ async def _execute_close_short(symbol: str, decision: Dict, trader, current_posi
         "quantity": current_position.size,
         "message": f"平空仓成功: {current_position.size}"
     }
-
-

@@ -3,12 +3,11 @@ Binance Futures Trader implementation using CCXT
 Handles real futures trading operations
 """
 import logging
-from typing import Dict, List, Optional, Any
+from typing import List, Optional
 import ccxt
 from datetime import datetime
 
 from trading.interface import ExchangeTrader, Position, Balance
-from utils.logger import logger
 
 logger = logging.getLogger("AlphaTransformer")
 
@@ -22,12 +21,18 @@ class BinanceFuturesTrader(ExchangeTrader):
             from config.settings import config
             exchange_config = config.exchange.get_ccxt_config()
             self.exchange = ccxt.binance(exchange_config)
+
+            if config.exchange.testnet:
+                self.exchange.enable_demo_trading(True)
             
             # 设置默认类型为期货
             if not hasattr(self.exchange, 'defaultType') or self.exchange.defaultType != 'future':
                 self.exchange.options['defaultType'] = 'future'
             
-            logger.info(f"初始化Binance期货交易器，测试模式: {self.exchange.options.get('sandbox', False)}")
+            logger.info(
+                "初始化Binance期货交易器，Demo Trading: "
+                f"{self.exchange.options.get('enableDemoTrading', False)}"
+            )
             
         except Exception as e:
             logger.error(f"初始化Binance期货交易器失败: {e}")

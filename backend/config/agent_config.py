@@ -55,6 +55,7 @@ class ExchangeConfig(BaseModel):
     api_key: str
     api_secret: str
     testnet: bool = True
+    allow_live_trading: bool = False
     websocket_url: str
     rest_api_url: str
     testnet_websocket_url: str
@@ -89,12 +90,12 @@ class ExchangeConfig(BaseModel):
             },
         }
 
-        # 设置测试/沙盒模式
-        if self.testnet or self.sandbox:
-            if "binance" in self.name.lower():
-                config["sandbox"] = True
-            elif "okx" in self.name.lower():
-                config["sandbox"] = True
+        # Binance Futures sandbox endpoints are deprecated in current CCXT.
+        # testnet is mapped to Binance Demo Trading by the exchange client.
+        if self.testnet and "binance" in self.name.lower():
+            config["options"]["enableDemoTrading"] = True
+        elif self.sandbox:
+            config["sandbox"] = True
 
         return config
 
