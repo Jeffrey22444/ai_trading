@@ -19,7 +19,7 @@ from services.prompt_service import get_trading_strategy
 class SymbolDecision(BaseModel):
     """单个交易标的的决策"""
 
-    symbol: str = Field(description="交易标的符号，例如 'BTCUSDT'")
+    symbol: str = Field(description="逻辑交易标的，例如 'BTC'")
     action: str = Field(
         description="期货交易决策，只能是 'OPEN_LONG'(开多仓), 'OPEN_SHORT'(开空仓), 'CLOSE_LONG'(平多仓), 'CLOSE_SHORT'(平空仓) 或 'HOLD'(持仓观望)"
     )
@@ -136,7 +136,7 @@ def analysis_node(tools: List):
             symbols_list = ", ".join(symbols)
 
             # 获取当前账户状态
-            from trading.binance_futures import get_trader
+            from trading.factory import get_trader
 
             trader = get_trader()
             balance = await trader.get_balance()

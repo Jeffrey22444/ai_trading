@@ -6,8 +6,9 @@ from typing import Dict, Any
 from datetime import datetime
 
 from agent.state import AgentState
-from trading.binance_futures import get_trader
+from trading.factory import get_trader
 from trading.risk_guard import validate_open_decision
+from trading.symbols import same_symbol
 from config.settings import config
 
 logger = logging.getLogger("AlphaTransformer")
@@ -133,11 +134,7 @@ async def _execute_futures_trading(symbol: str, decision: Dict[str, Any], trader
         # 获取当前持仓 (处理符号格式差异)
         current_position = None
         for pos in positions:
-            # 标准化符号比较：SOLUSDT vs SOL/USDT:USDT
-            pos_symbol_normalized = pos.symbol.replace('/', '').replace(':USDT', '')
-            symbol_normalized = symbol.replace('/', '').replace(':USDT', '')
-            
-            if pos_symbol_normalized == symbol_normalized:
+            if same_symbol(pos.symbol, symbol):
                 current_position = pos
                 break
         

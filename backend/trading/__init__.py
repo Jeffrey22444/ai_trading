@@ -7,7 +7,7 @@ from .interface import (
     Balance,
     TradingDecision
 )
-from .binance_futures import get_trader
+from .factory import get_trader
 from .position_service import get_position_service
 
 __all__ = [

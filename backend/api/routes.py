@@ -14,8 +14,9 @@ from agent.models import analysis_service
 from agent.scheduler import get_scheduler
 from database.database import init_database
 from config.settings import config
+from config.agent_config import is_missing_secret
 from utils.logger import logger
-from trading.binance_futures import get_trader
+from trading.factory import get_trader
 from trading.position_service import get_position_service
 from services.prompt_service import get_trading_strategy, set_trading_strategy
 
@@ -51,7 +52,7 @@ class CacheInfoResponse(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """System health check"""
+    """System health check. websocket_connected represents market-data freshness."""
     status = ws_client.get_status()
     
     return HealthResponse(
@@ -201,12 +202,9 @@ async def validate_config():
         "valid": len(missing_vars) == 0,
         "missing_env_vars": missing_vars,
         "testnet_mode": config.is_testnet_mode(),
-        "agent_configured": bool(config.agent.api_key and not config.agent.api_key.startswith('${')),
+        "agent_configured": not is_missing_secret(config.agent.api_key),
         "exchange_configured": bool(
-            config.exchange.api_key and 
-            config.exchange.api_secret and 
-            not config.exchange.api_key.startswith('${') and
-            not config.exchange.api_secret.startswith('${')
+            not config.exchange.missing_credential_env_vars()
         )
     }
 
@@ -806,7 +804,7 @@ async def reset_trading_strategy():
     try:
         from database.database import get_session_maker
         from database.models import SystemConfig
-        from sqlalchemy import select, delete
+        from sqlalchemy import delete
         
         async with get_session_maker()() as session:
             # 删除数据库中的自定义配置

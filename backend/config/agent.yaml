@@ -9,10 +9,9 @@ agent:
   # Trading Configuration
   decision_interval: 180  # seconds between decisions
   symbols:
-    - ETHUSDT
-    - SOLUSDT
-    - DOGEUSDT
-    - XRPUSDT
+    - BTC
+    - ETH
+    - SOL
   timeframes:
     - "3m"
     - "1h"
@@ -46,20 +45,11 @@ agent:
 
 # Exchange Configuration
 exchange:
-  name: "binance_futures"
-  api_key: "${BINANCE_API_KEY}"
-  api_secret: "${BINANCE_API_SECRET}"
-  # Public market data uses testnet; CCXT trade execution uses Binance Demo Trading.
-  testnet: true  # Keep enabled until live trading is explicitly approved
+  name: "hyperliquid"
+  wallet_address: "${HYPERLIQUID_WALLET_ADDRESS}"
+  private_key: "${HYPERLIQUID_PRIVATE_KEY}"
+  testnet: true
   allow_live_trading: false
-  
-  # WebSocket and REST API endpoints
-  websocket_url: "wss://fstream.binance.com/stream"  # Production
-  rest_api_url: "https://fapi.binance.com"  # Production
-  
-  # Public test market-data endpoints (used when testnet: true)
-  testnet_websocket_url: "wss://stream.binancefuture.com/stream"
-  testnet_rest_api_url: "https://testnet.binancefuture.com"
   
   # Futures trading settings (for CCXT)
   default_leverage: 1
@@ -67,7 +57,7 @@ exchange:
   enable_rate_limit: true
   timeout: 10000  # milliseconds
   retries: 3
-  sandbox: false  # Legacy CCXT sandbox mode; do not enable for Binance Futures
+  sandbox: true
   
 # Risk Management (these can be overridden in user prompts)
 default_risk:

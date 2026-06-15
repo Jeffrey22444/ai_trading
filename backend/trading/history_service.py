@@ -7,12 +7,12 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Any
 from sqlalchemy import select, func, desc, text
 from sqlalchemy.ext.asyncio import AsyncSession
-import json
 
 from database.database import get_session_maker
 from database.models import BalanceSnapshot, OrderRecord, TradeRecord, SystemConfig
-from trading.binance_futures import get_trader
-from utils.logger import logger
+from config.settings import config
+from trading.factory import get_trader
+from trading.symbols import from_exchange_symbol, to_exchange_symbol
 
 logger = logging.getLogger("AlphaTransformer")
 
@@ -36,7 +36,7 @@ class TradingHistoryService:
         """自动初始化系统（首次启动时调用）"""
         try:
             # 设置初始化时间为当前时间
-            init_time = await self.set_init_timestamp()
+            await self.set_init_timestamp()
             
             # 全量同步历史数据
             logger.info("开始全量同步历史数据...")
@@ -158,7 +158,6 @@ class TradingHistoryService:
     async def sync_recent_orders(self, hours: int = 24, symbols: Optional[List[str]] = None) -> int:
         """同步最近的订单数据（更高效）"""
         if symbols is None:
-            from config.settings import config
             symbols = config.agent.symbols
         
         # 只同步最近N小时的数据
@@ -169,7 +168,8 @@ class TradingHistoryService:
         for symbol in symbols:
             try:
                 logger.debug(f"同步 {symbol} 最近 {hours}h 的订单...")
-                orders = self.trader.exchange.fetch_orders(symbol, since=since_ms)
+                exchange_symbol = to_exchange_symbol(symbol, config.exchange.name)
+                orders = self.trader.exchange.fetch_orders(exchange_symbol, since=since_ms)
                 
                 async with get_session_maker()() as session:
                     for order_data in orders:
@@ -197,7 +197,6 @@ class TradingHistoryService:
             return 0
         
         if symbols is None:
-            from config.settings import config
             symbols = config.agent.symbols
         
         # 如果不是全量同步，只同步最近的数据
@@ -210,7 +209,8 @@ class TradingHistoryService:
         for symbol in symbols:
             try:
                 logger.info(f"全量同步 {symbol} 的历史订单...")
-                orders = self.trader.exchange.fetch_orders(symbol, since=since_ms)
+                exchange_symbol = to_exchange_symbol(symbol, config.exchange.name)
+                orders = self.trader.exchange.fetch_orders(exchange_symbol, since=since_ms)
                 
                 async with get_session_maker()() as session:
                     for order_data in orders:
@@ -232,7 +232,6 @@ class TradingHistoryService:
     async def sync_recent_trades(self, hours: int = 24, symbols: Optional[List[str]] = None) -> int:
         """同步最近的交易数据（更高效）"""
         if symbols is None:
-            from config.settings import config
             symbols = config.agent.symbols
         
         # 只同步最近N小时的数据
@@ -243,7 +242,10 @@ class TradingHistoryService:
         for symbol in symbols:
             try:
                 logger.debug(f"同步 {symbol} 最近 {hours}h 的交易...")
-                trades = self.trader.exchange.fetch_my_trades(symbol, since=since_ms)
+                exchange_symbol = to_exchange_symbol(symbol, config.exchange.name)
+                trades = self.trader.exchange.fetch_my_trades(
+                    exchange_symbol, since=since_ms
+                )
                 
                 async with get_session_maker()() as session:
                     for trade_data in trades:
@@ -271,7 +273,6 @@ class TradingHistoryService:
             return 0
         
         if symbols is None:
-            from config.settings import config
             symbols = config.agent.symbols
         
         # 如果不是全量同步，只同步最近的数据
@@ -284,7 +285,10 @@ class TradingHistoryService:
         for symbol in symbols:
             try:
                 logger.info(f"全量同步 {symbol} 的历史交易...")
-                trades = self.trader.exchange.fetch_my_trades(symbol, since=since_ms)
+                exchange_symbol = to_exchange_symbol(symbol, config.exchange.name)
+                trades = self.trader.exchange.fetch_my_trades(
+                    exchange_symbol, since=since_ms
+                )
                 
                 async with get_session_maker()() as session:
                     for trade_data in trades:
@@ -327,7 +331,7 @@ class TradingHistoryService:
                 # 创建新记录
                 order_record = OrderRecord(
                     order_id=order_data['id'],
-                    symbol=order_data['symbol'],
+                    symbol=from_exchange_symbol(order_data['symbol']),
                     side=order_data['side'].upper(),
                     type=order_data['type'].upper(),
                     amount=order_data.get('amount', 0.0),
@@ -363,7 +367,7 @@ class TradingHistoryService:
             trade_record = TradeRecord(
                 trade_id=trade_data['id'],
                 order_id=trade_data['order'],
-                symbol=trade_data['symbol'],
+                symbol=from_exchange_symbol(trade_data['symbol']),
                 side=trade_data['side'],
                 amount=trade_data['amount'],
                 price=trade_data['price'],
@@ -477,7 +481,7 @@ class TradingHistoryService:
             try:
                 positions = await self.trader.get_positions()
                 active_positions = len(positions)
-            except:
+            except Exception:
                 active_positions = 0
             
             return {

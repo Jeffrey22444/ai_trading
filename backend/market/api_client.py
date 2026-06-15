@@ -89,5 +89,10 @@ class BinanceAPIClient:
         await self.client.aclose()
 
 
-# Global instance
-api_client = BinanceAPIClient()
+# Global instance selected by exchange configuration.
+if config.exchange.name.lower() == "hyperliquid":
+    from market.hyperliquid_market import HyperliquidMarketClient
+
+    api_client = HyperliquidMarketClient()
+else:
+    api_client = BinanceAPIClient()

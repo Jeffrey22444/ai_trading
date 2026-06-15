@@ -256,5 +256,10 @@ class BinanceWebSocketClient:
         self.message_handlers.append(handler)
 
 
-# Global WebSocket client instance
-ws_client = BinanceWebSocketClient()
+# Hyperliquid P0 uses a polling lifecycle with the same public interface.
+if config.exchange.name.lower() == "hyperliquid":
+    from market.api_client import api_client
+
+    ws_client = api_client
+else:
+    ws_client = BinanceWebSocketClient()

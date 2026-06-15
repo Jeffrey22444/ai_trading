@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from config.settings import config  # noqa: E402
-from trading.binance_futures import BinanceFuturesTrader  # noqa: E402
+from trading.factory import get_trader  # noqa: E402
 
 
 VALID_ACTIONS = {
@@ -38,17 +38,19 @@ def validate_local_safety() -> None:
         fail(f"模型不是 deepseek-chat: {config.agent.model_name}")
     if config.agent.base_url != "https://api.deepseek.com/v1":
         fail(f"DeepSeek base_url 不正确: {config.agent.base_url}")
+    if config.exchange.name != "hyperliquid":
+        fail(f"交易所不是 Hyperliquid: {config.exchange.name}")
     if not config.exchange.testnet:
         fail("testnet 必须为 true")
     if config.exchange.allow_live_trading:
         fail("allow_live_trading 必须为 false")
 
-    trader = BinanceFuturesTrader()
-    if not trader.exchange.options.get("enableDemoTrading"):
-        fail("CCXT Binance Demo Trading 未启用")
-    private_url = trader.exchange.urls["api"]["fapiPrivate"]
-    if not private_url.startswith("https://demo-fapi.binance.com"):
-        fail(f"交易私有端点不是 Binance Demo Trading: {private_url}")
+    trader = get_trader()
+    if not trader.exchange.options.get("sandboxMode"):
+        fail("CCXT Hyperliquid sandbox 未启用")
+    private_url = trader.exchange.urls["api"]["private"]
+    if not private_url.startswith("https://api.hyperliquid-testnet.xyz"):
+        fail(f"交易私有端点不是 Hyperliquid 测试网: {private_url}")
 
 
 def validate_decision(

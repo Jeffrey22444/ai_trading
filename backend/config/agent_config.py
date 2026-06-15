@@ -10,6 +10,18 @@ import yaml
 from pydantic import BaseModel
 
 
+def is_missing_secret(value: str) -> bool:
+    """Treat unresolved variables and documented placeholders as missing."""
+    normalized = (value or "").strip().lower()
+    return (
+        not normalized
+        or normalized.startswith("${")
+        or normalized.startswith("your_")
+        or normalized.startswith("replace")
+        or "placeholder" in normalized
+    )
+
+
 def substitute_env_vars(text: str) -> str:
     """替换字符串中的环境变量 ${VAR_NAME}"""
     pattern = re.compile(r"\$\{([^}]+)\}")
@@ -52,14 +64,16 @@ class AgentConfig(BaseModel):
 
 class ExchangeConfig(BaseModel):
     name: str
-    api_key: str
-    api_secret: str
+    api_key: str = ""
+    api_secret: str = ""
+    wallet_address: str = ""
+    private_key: str = ""
     testnet: bool = True
     allow_live_trading: bool = False
-    websocket_url: str
-    rest_api_url: str
-    testnet_websocket_url: str
-    testnet_rest_api_url: str
+    websocket_url: str = ""
+    rest_api_url: str = ""
+    testnet_websocket_url: str = ""
+    testnet_rest_api_url: str = ""
 
     # Futures trading settings (for CCXT)
     default_leverage: int = 1
@@ -79,6 +93,18 @@ class ExchangeConfig(BaseModel):
 
     def get_ccxt_config(self) -> Dict[str, Any]:
         """获取CCXT交易所配置（用于期货交易）"""
+        if self.name.lower() == "hyperliquid":
+            return {
+                "walletAddress": self.wallet_address,
+                "privateKey": self.private_key,
+                "enableRateLimit": self.enable_rate_limit,
+                "timeout": self.timeout,
+                "retries": self.retries,
+                "options": {
+                    "defaultType": "swap",
+                },
+            }
+
         config = {
             "apiKey": self.api_key,
             "secret": self.api_secret,
@@ -98,6 +124,20 @@ class ExchangeConfig(BaseModel):
             config["sandbox"] = True
 
         return config
+
+    def missing_credential_env_vars(self) -> list[str]:
+        """Return missing credential names for the selected exchange."""
+        if self.name.lower() == "hyperliquid":
+            required = (
+                ("HYPERLIQUID_WALLET_ADDRESS", self.wallet_address),
+                ("HYPERLIQUID_PRIVATE_KEY", self.private_key),
+            )
+        else:
+            required = (
+                ("BINANCE_API_KEY", self.api_key),
+                ("BINANCE_API_SECRET", self.api_secret),
+            )
+        return [name for name, value in required if is_missing_secret(value)]
 
 
 class RiskConfig(BaseModel):
@@ -138,14 +178,10 @@ class AppConfig(BaseModel):
         """检查必需的环境变量是否设置"""
         missing_vars = []
 
-        if not self.agent.api_key or self.agent.api_key.startswith("${"):
+        if is_missing_secret(self.agent.api_key):
             missing_vars.append("OPENAI_API_KEY")
 
-        if not self.exchange.api_key or self.exchange.api_key.startswith("${"):
-            missing_vars.append("BINANCE_API_KEY")
-
-        if not self.exchange.api_secret or self.exchange.api_secret.startswith("${"):
-            missing_vars.append("BINANCE_API_SECRET")
+        missing_vars.extend(self.exchange.missing_credential_env_vars())
 
         return missing_vars
 
@@ -154,8 +190,7 @@ class AppConfig(BaseModel):
         return (
             self.exchange.testnet
             or not self.agent.api_key
-            or not self.exchange.api_key
-            or not self.exchange.api_secret
+            or bool(self.exchange.missing_credential_env_vars())
         )
 
 
@@ -196,8 +231,6 @@ def validate_config():
         ("agent.symbols", cfg.agent.symbols),
         ("agent.timeframes", cfg.agent.timeframes),
         ("exchange.name", cfg.exchange.name),
-        ("exchange.api_key", cfg.exchange.api_key),
-        ("exchange.api_secret", cfg.exchange.api_secret),
     ]
 
     for field_name, field_value in required_fields:
@@ -231,14 +264,11 @@ def validate_config():
             errors.append(f"无效的时间框架: {tf}，支持的时间框架: {valid_timeframes}")
 
     # 检查API key格式
-    if cfg.agent.api_key.startswith("${"):
+    if is_missing_secret(cfg.agent.api_key):
         errors.append("agent.api_key 环境变量未正确设置")
 
-    if cfg.exchange.api_key.startswith("${"):
-        errors.append("exchange.api_key 环境变量未正确设置")
-
-    if cfg.exchange.api_secret.startswith("${"):
-        errors.append("exchange.api_secret 环境变量未正确设置")
+    for missing_var in cfg.exchange.missing_credential_env_vars():
+        errors.append(f"{missing_var} 环境变量未正确设置")
 
     if errors:
         print("❌ 配置验证失败:")

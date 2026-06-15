@@ -28,7 +28,7 @@ dependencies = [
     "TA-Lib>=0.6.8", # Technical analysis library (case sensitive)
     "pandas>=2.1.0", # Data processing
     "numpy>=1.24.0", # Required by pandas and calculations
-    "ccxt>=4.2.0", # Multi-exchange trading library
+    "ccxt==4.5.58", # Verified Hyperliquid testnet market loading
     "greenlet>=3.2.4",
 ]
 

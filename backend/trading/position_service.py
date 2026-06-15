@@ -6,9 +6,9 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 
-from trading.interface import Position, Balance
-from trading.binance_futures import get_trader
-from utils.logger import logger
+from trading.interface import Position
+from trading.factory import get_trader
+from trading.symbols import same_symbol
 
 logger = logging.getLogger("AlphaTransformer")
 
@@ -68,7 +68,7 @@ class PositionService:
             positions = await self.trader.get_positions()
             
             for position in positions:
-                if position.symbol == symbol:
+                if same_symbol(position.symbol, symbol):
                     return position
             
             return None
