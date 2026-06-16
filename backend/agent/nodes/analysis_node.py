@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from agent.state import AgentState
 from config.settings import config
 from services.prompt_service import get_trading_strategy
+from trading.symbols import from_exchange_symbol
 
 
 class SymbolDecision(BaseModel):
@@ -39,6 +40,11 @@ class SymbolDecision(BaseModel):
     @classmethod
     def normalize_optional_position_size(cls, value):
         return 0.0 if value is None else value
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return from_exchange_symbol(value)
 
 
 class TradingDecision(BaseModel):

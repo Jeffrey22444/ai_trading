@@ -8,6 +8,7 @@ from typing import Dict, Any
 from datetime import datetime
 
 from market.data_cache import kline_cache
+from trading.symbols import from_exchange_symbol
 from utils.logger import logger
 
 
@@ -63,6 +64,106 @@ def _generate_overall_signals(multi_timeframe_analysis: Dict[str, Dict]) -> Dict
     return overall_signals
 
 
+def _requested_symbols(raw_symbol: str) -> list[str]:
+    """Normalize single-symbol or multi-symbol tool input from the LLM."""
+    from config.settings import config
+
+    requested = (raw_symbol or "").upper()
+    configured = list(config.agent.symbols)
+
+    matched = [
+        configured_symbol
+        for configured_symbol in configured
+        if from_exchange_symbol(configured_symbol) in requested
+    ]
+    if matched:
+        return matched
+
+    return [from_exchange_symbol(raw_symbol)]
+
+
+def _analyze_single_symbol(symbol: str) -> Dict[str, Any]:
+    from config.settings import config
+
+    logical_symbol = from_exchange_symbol(symbol)
+    logger.info(f"获取 {logical_symbol} 多时间框架技术分析数据")
+
+    multi_timeframe_analysis = {}
+
+    for timeframe in config.agent.timeframes:
+        klines = kline_cache.get_klines_snapshot(logical_symbol, timeframe, limit=200)
+        logger.info(f"获取到 {logical_symbol} {timeframe} {len(klines)} 根K线数据")
+
+        if not klines:
+            logger.warning(f"{logical_symbol} {timeframe} 缓存中无数据")
+            multi_timeframe_analysis[timeframe] = {
+                "error": "缓存中无数据",
+                "data_points": 0
+            }
+            continue
+
+        closes = np.array([float(kline.close_price) for kline in klines], dtype=np.float64)
+        highs = np.array([float(kline.high_price) for kline in klines], dtype=np.float64)
+        lows = np.array([float(kline.low_price) for kline in klines], dtype=np.float64)
+        current_price = closes[-1]
+        price_change = closes[-1] - closes[-2] if len(closes) >= 2 else 0
+        price_change_percent = (
+            price_change / closes[-2] * 100
+            if len(closes) >= 2 and closes[-2] > 0
+            else 0
+        )
+
+        timeframe_result = {
+            "current_price": current_price,
+            "price_change": price_change,
+            "price_change_percent": price_change_percent,
+            "data_points": len(klines),
+            "latest_timestamp": (
+                klines[-1].timestamp.isoformat() if klines[-1].timestamp else None
+            ),
+        }
+
+        timeframe_result["ema20"] = (
+            talib.EMA(closes, timeperiod=20)[-1] if len(closes) >= 20 else None
+        )
+        timeframe_result["ema50"] = (
+            talib.EMA(closes, timeperiod=50)[-1] if len(closes) >= 50 else None
+        )
+
+        macd, macd_signal, macd_hist = talib.MACD(
+            closes, fastperiod=12, slowperiod=26, signalperiod=9
+        )
+        timeframe_result["macd_line"] = (
+            macd[-1] if not np.isnan(macd[-1]) else None
+        )
+        timeframe_result["signal_line"] = (
+            macd_signal[-1] if not np.isnan(macd_signal[-1]) else None
+        )
+        timeframe_result["macd_histogram"] = (
+            macd_hist[-1] if not np.isnan(macd_hist[-1]) else None
+        )
+
+        rsi7 = talib.RSI(closes, timeperiod=7)
+        rsi14 = talib.RSI(closes, timeperiod=14)
+        timeframe_result["rsi7"] = rsi7[-1] if not np.isnan(rsi7[-1]) else None
+        timeframe_result["rsi14"] = rsi14[-1] if not np.isnan(rsi14[-1]) else None
+
+        natr = talib.NATR(highs, lows, closes, timeperiod=14)
+        timeframe_result["natr"] = natr[-1] if not np.isnan(natr[-1]) else None
+
+        multi_timeframe_analysis[timeframe] = timeframe_result
+
+    result = {
+        "symbol": logical_symbol,
+        "timeframes": multi_timeframe_analysis,
+        "overall_signals": _generate_overall_signals(multi_timeframe_analysis),
+        "analysis_timestamp": datetime.now().isoformat()
+    }
+
+    logger.info(f"{logical_symbol} 多时间框架技术分析完成")
+    return result
+
+
 def tech_analysis_tool(symbol: str) -> Dict[str, Any]:
     """
     Multi-timeframe technical analysis tool for AI agent using TA-Lib
@@ -74,76 +175,19 @@ def tech_analysis_tool(symbol: str) -> Dict[str, Any]:
         Dict containing multi-timeframe technical analysis
     """
     try:
-        from config.settings import config
-        
-        logger.info(f"获取 {symbol} 多时间框架技术分析数据")
-        
-        # 分析多个时间框架
-        multi_timeframe_analysis = {}
-        
-        for timeframe in config.agent.timeframes:
-            klines = kline_cache.get_klines_snapshot(symbol, timeframe, limit=200)
-            logger.info(f"获取到 {symbol} {timeframe} {len(klines)} 根K线数据")
-            
-            # 分析单个时间框架
-            if not klines:
-                logger.warning(f"{symbol} {timeframe} 缓存中无数据")
-                multi_timeframe_analysis[timeframe] = {
-                    "error": "缓存中无数据",
-                    "data_points": 0
-                }
-                continue
-            
-            # 提取价格数据为numpy数组
-            closes = np.array([float(kline.close_price) for kline in klines], dtype=np.float64)
-            highs = np.array([float(kline.high_price) for kline in klines], dtype=np.float64)
-            lows = np.array([float(kline.low_price) for kline in klines], dtype=np.float64)
-            current_price = closes[-1]
-            price_change = closes[-1] - closes[-2] if len(closes) >= 2 else 0
-            price_change_percent = (price_change / closes[-2] * 100) if len(closes) >= 2 and closes[-2] > 0 else 0
-            
-            # 使用 TA-Lib 计算核心技术指标
-            timeframe_result = {
-                "current_price": current_price,
-                "price_change": price_change,
-                "price_change_percent": price_change_percent,
-                "data_points": len(klines),
-                "latest_timestamp": klines[-1].timestamp.isoformat() if klines[-1].timestamp else None,
-            }
-            
-            # EMA (20, 50)
-            timeframe_result["ema20"] = talib.EMA(closes, timeperiod=20)[-1] if len(closes) >= 20 else None
-            timeframe_result["ema50"] = talib.EMA(closes, timeperiod=50)[-1] if len(closes) >= 50 else None
-            
-            # MACD
-            macd, macd_signal, macd_hist = talib.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9)
-            timeframe_result["macd_line"] = macd[-1] if not np.isnan(macd[-1]) else None
-            timeframe_result["signal_line"] = macd_signal[-1] if not np.isnan(macd_signal[-1]) else None
-            timeframe_result["macd_histogram"] = macd_hist[-1] if not np.isnan(macd_hist[-1]) else None
-            
-            # RSI (7, 14)
-            rsi7 = talib.RSI(closes, timeperiod=7)
-            rsi14 = talib.RSI(closes, timeperiod=14)
-            timeframe_result["rsi7"] = rsi7[-1] if not np.isnan(rsi7[-1]) else None
-            timeframe_result["rsi14"] = rsi14[-1] if not np.isnan(rsi14[-1]) else None
-            
-            # NATR (Normalized Average True Range) - 标准化平均真实范围
-            natr = talib.NATR(highs, lows, closes, timeperiod=14)
-            timeframe_result["natr"] = natr[-1] if not np.isnan(natr[-1]) else None
-            
-            multi_timeframe_analysis[timeframe] = timeframe_result
-        
-        # 生成跨时间框架的综合分析
-        result = {
-            "symbol": symbol,
-            "timeframes": multi_timeframe_analysis,
-            "overall_signals": _generate_overall_signals(multi_timeframe_analysis),
+        symbols = _requested_symbols(symbol)
+        analyses = {
+            logical_symbol: _analyze_single_symbol(logical_symbol)
+            for logical_symbol in symbols
+        }
+
+        if len(analyses) == 1:
+            return next(iter(analyses.values()))
+
+        return {
+            "symbols": analyses,
             "analysis_timestamp": datetime.now().isoformat()
         }
-        
-        
-        logger.info(f"{symbol} 多时间框架技术分析完成")
-        return result
         
     except Exception as e:
         logger.error(f"多时间框架技术分析失败 {symbol}: {e}")
