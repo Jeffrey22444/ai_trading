@@ -1,31 +1,25 @@
-# AlphaTransformer Development Guidelines
+# Agent Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-11-13
+## Safety
 
-## Active Technologies
+禁止批量删除文件或目录。
 
-- Python 3.11+ (backend), TypeScript/React (frontend) + FastAPI 0.104.0, LangChain, LangGraph, SQLAlchemy 2.0, Next.js 14, Tailwind CSS (002-custom-prompts)
+不要使用：
+- `del /s`
+- `rd /s`
+- `rmdir /s`
+- `Remove-Item -Recurse`
+- `rm -rf`
 
-## Project Structure
+需要删除文件时，只能一次删除一个明确路径的文件。
 
-```text
-src/
-tests/
+正确演示：
+```bash
+Remove-Item "/path/to/file.txt"
 ```
 
-## Commands
+如果需要批量删除文件，应停止操作，解释删除的后果（面向新手水平的解释），并等待用户同意。
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
-
-## Code Style
-
-Python 3.11+ (backend), TypeScript/React (frontend): Follow standard conventions
-
-## Recent Changes
-
-- 002-custom-prompts: Added Python 3.11+ (backend), TypeScript/React (frontend) + FastAPI 0.104.0, LangChain, LangGraph, SQLAlchemy 2.0, Next.js 14, Tailwind CSS
-
-<!-- MANUAL ADDITIONS START -->
 ## Project Memory System
 
 This project maintains institutional knowledge in `docs/project_notes/` for consistency across sessions.
@@ -69,4 +63,3 @@ This project maintains institutional knowledge in `docs/project_notes/` for cons
 - Include URLs for tickets, documentation, monitoring dashboards
 - Manual cleanup of old entries is expected
 
-<!-- MANUAL ADDITIONS END -->
