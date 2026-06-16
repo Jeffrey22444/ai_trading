@@ -7,6 +7,7 @@ import talib
 from typing import Dict, Any
 from datetime import datetime
 
+from market.derivatives_cache import derivatives_cache
 from market.data_cache import kline_cache
 from trading.symbols import from_exchange_symbol
 from utils.logger import logger
@@ -79,7 +80,54 @@ def _requested_symbols(raw_symbol: str) -> list[str]:
     if matched:
         return matched
 
-    return [from_exchange_symbol(raw_symbol)]
+    # ReAct tool calls are occasionally broad or malformed. Defaulting to all
+    # configured symbols is safer than inventing a cache key that guarantees an
+    # empty-data response and a misleading "no K-line data" summary.
+    logger.warning("未能从工具输入中识别标的，回退为分析全部配置标的: %s", raw_symbol)
+    return configured
+
+
+def _nearest_levels(
+    highs: np.ndarray, lows: np.ndarray, current_price: float, lookback: int = 20
+) -> tuple[float | None, float | None]:
+    """Estimate nearby support/resistance from recent candles."""
+    recent_highs = highs[-lookback:] if len(highs) >= lookback else highs
+    recent_lows = lows[-lookback:] if len(lows) >= lookback else lows
+
+    lower_levels = recent_lows[recent_lows <= current_price]
+    upper_levels = recent_highs[recent_highs >= current_price]
+
+    support = float(np.max(lower_levels)) if len(lower_levels) else float(np.min(recent_lows))
+    resistance = (
+        float(np.min(upper_levels)) if len(upper_levels) else float(np.max(recent_highs))
+    )
+    return support, resistance
+
+
+def _derivatives_context(logical_symbol: str) -> Dict[str, Any]:
+    snapshot = derivatives_cache.get_snapshot(logical_symbol)
+    if snapshot is None:
+        return {
+            "open_interest": None,
+            "funding_rate": None,
+            "funding_interval": None,
+            "funding_timestamp": None,
+            "mark_price": None,
+            "index_price": None,
+            "premium": None,
+        }
+
+    return {
+        "open_interest": snapshot.open_interest,
+        "funding_rate": snapshot.funding_rate,
+        "funding_interval": snapshot.funding_interval,
+        "funding_timestamp": (
+            snapshot.funding_timestamp.isoformat() if snapshot.funding_timestamp else None
+        ),
+        "mark_price": snapshot.mark_price,
+        "index_price": snapshot.index_price,
+        "premium": snapshot.premium,
+    }
 
 
 def _analyze_single_symbol(symbol: str) -> Dict[str, Any]:
@@ -148,14 +196,22 @@ def _analyze_single_symbol(symbol: str) -> Dict[str, Any]:
         timeframe_result["rsi7"] = rsi7[-1] if not np.isnan(rsi7[-1]) else None
         timeframe_result["rsi14"] = rsi14[-1] if not np.isnan(rsi14[-1]) else None
 
+        atr = talib.ATR(highs, lows, closes, timeperiod=14)
+        timeframe_result["atr"] = atr[-1] if not np.isnan(atr[-1]) else None
+
         natr = talib.NATR(highs, lows, closes, timeperiod=14)
         timeframe_result["natr"] = natr[-1] if not np.isnan(natr[-1]) else None
+
+        support, resistance = _nearest_levels(highs, lows, current_price)
+        timeframe_result["nearest_support"] = support
+        timeframe_result["nearest_resistance"] = resistance
 
         multi_timeframe_analysis[timeframe] = timeframe_result
 
     result = {
         "symbol": logical_symbol,
         "timeframes": multi_timeframe_analysis,
+        "derivatives": _derivatives_context(logical_symbol),
         "overall_signals": _generate_overall_signals(multi_timeframe_analysis),
         "analysis_timestamp": datetime.now().isoformat()
     }
@@ -207,7 +263,7 @@ def create_tech_analysis_tool():
     
     tool = Tool(
         name="tech_analysis_tool",
-        description="获取交易标的的多时间框架技术分析数据，包括EMA20、EMA50、MACD、RSI7、RSI14、NATR（标准化平均真实范围/波动率）等核心技术指标，并提供跨时间框架的综合分析",
+        description="获取交易标的的多时间框架技术分析数据，包括EMA20、EMA50、MACD、RSI7、RSI14、ATR、NATR、最近支撑/阻力位，以及衍生品上下文中的持仓量OI、资金费率Funding、标记价格等，并提供跨时间框架的综合分析",
         func=tech_analysis_tool
     )
     

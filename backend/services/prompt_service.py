@@ -4,10 +4,14 @@
 import logging
 from typing import Optional
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from database.database import get_session_maker
 from database.models import SystemConfig
 from config.settings import config
+from services.strategy_contract import (
+    StrategyValidationResult,
+    get_strategy_field_catalog,
+    validate_strategy_field_references,
+)
 
 logger = logging.getLogger("AlphaTransformer")
 
@@ -111,6 +115,16 @@ async def set_trading_strategy(strategy: str) -> bool:
     except Exception as e:
         logger.error(f"设置交易策略失败: {e}")
         return False
+
+
+def validate_trading_strategy(strategy: str) -> StrategyValidationResult:
+    """Validate explicit backend-field references inside a strategy body."""
+    return validate_strategy_field_references(strategy, list(config.agent.timeframes))
+
+
+def get_trading_strategy_field_catalog() -> dict:
+    """Return the field catalog the strategy is allowed to reference."""
+    return get_strategy_field_catalog(list(config.agent.timeframes))
 
 def clear_strategy_cache():
     """清除策略缓存（用于测试或强制刷新）"""

@@ -181,6 +181,21 @@ def get_config() -> AppConfig:
     return config
 
 
+def reload_config() -> AppConfig:
+    """重新加载配置文件，并原地更新全局配置对象。"""
+    global config
+    new_config = load_app_config()
+
+    if config is None:
+        config = new_config
+        return config
+
+    for field_name in config.__class__.model_fields:
+        setattr(config, field_name, getattr(new_config, field_name))
+
+    return config
+
+
 # 验证配置完整性
 def validate_config():
     """验证配置的完整性，失败则退出程序"""

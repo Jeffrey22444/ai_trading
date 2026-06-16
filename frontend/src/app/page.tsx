@@ -2,11 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
 import AccountChart from '@/components/charts/AccountChart';
 import DecisionsList from '@/components/trading/DecisionsList';
 import PositionsList from '@/components/trading/PositionsList';
-import StatsCard from '@/components/stats/StatsCard';
 import { formatNumber } from '@/lib/utils';
 import { fetchAccountData, fetchDecisions, fetchPositions, fetchStats } from '@/lib/api';
 import type { AccountValue, Decision, Position, TradeStats } from '@/lib/types';
@@ -63,9 +61,10 @@ export default function TradingDashboard() {
           totalPnl: 0,
           totalPnlPercent: 0,
           winRate: 0,
+          profitLossRatio: 0,
+          expectancy: 0,
           avgTradeSize: 0,
-          maxDrawdown: 0,
-          sharpeRatio: 0,
+          activePositions: 0,
         });
       }
     } finally {
@@ -109,7 +108,10 @@ export default function TradingDashboard() {
     }
   }, [decisions.length, hasMoreDecisions, isLoadingMoreDecisions]);
 
-  const currentAccountValue = accountData[accountData.length - 1]?.value || 10000;
+  const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+  const formatRatio = (value: number) => value.toFixed(2);
+  const formatExpectancy = (value: number) =>
+    `${value >= 0 ? '+' : '-'}${formatNumber(Math.abs(value))}`;
 
   if (loading) {
     return (
@@ -169,43 +171,55 @@ export default function TradingDashboard() {
             
             {/* Bottom Stats Area */}
             <div className="border-t-2 border-black bg-white flex-shrink-0">
-              <div className="grid grid-cols-3 sm:grid-cols-5">
+              <div className="grid grid-cols-3 sm:grid-cols-6">
                 {/* TOTAL TRADES */}
                 <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">TRADES</div>
                   <div className="text-base md:text-xl font-bold font-mono">{stats.totalTrades}</div>
                 </div>
                 
-                {/* TOTAL VOLUME - Visible on mobile, replaces WIN RATE */}
-                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center sm:hidden">
-                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">VOLUME</div>
-                  <div className="text-base md:text-xl font-bold font-mono">{formatNumber(stats.totalVolume)}</div>
-                </div>
-                
-                {/* WIN RATE - Hidden on mobile */}
-                <div className="hidden sm:block border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
+                {/* WIN RATE */}
+                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">WIN RATE</div>
-                  <div className="text-base md:text-xl font-bold font-mono text-green-600">{stats.winRate}%</div>
+                  <div className={`text-base md:text-xl font-bold font-mono ${stats.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatPercent(stats.winRate)}
+                  </div>
                 </div>
-                
+
                 {/* TOTAL P&L */}
-                <div className="p-2 md:p-4 flex flex-col justify-center text-center sm:border-r-2 sm:border-black">
+                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">P&L</div>
                   <div className={`text-base md:text-xl font-bold font-mono ${stats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatNumber(stats.totalPnl)}
                   </div>
                 </div>
-                
-                {/* TOTAL VOLUME - Desktop version */}
-                <div className="hidden sm:block border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
+
+                {/* PROFIT/LOSS RATIO */}
+                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">P/L RATIO</div>
+                  <div className={`text-base md:text-xl font-bold font-mono ${stats.profitLossRatio >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatRatio(stats.profitLossRatio)}
+                  </div>
+                </div>
+
+                {/* EXPECTANCY */}
+                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">EXPECTANCY</div>
+                  <div className={`text-base md:text-xl font-bold font-mono ${stats.expectancy >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatExpectancy(stats.expectancy)}
+                  </div>
+                </div>
+
+                {/* TOTAL VOLUME */}
+                <div className="border-r-2 border-black p-2 md:p-4 flex flex-col justify-center text-center">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">VOLUME</div>
                   <div className="text-base md:text-xl font-bold font-mono">{formatNumber(stats.totalVolume)}</div>
                 </div>
-                
-                {/* ACTIVE POSITIONS - Hidden on small screens */}
-                <div className="hidden sm:block p-2 md:p-4 flex flex-col justify-center text-center">
+
+                {/* ACTIVE POSITIONS */}
+                <div className="p-2 md:p-4 flex flex-col justify-center text-center">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono mb-1 md:mb-2">POSITIONS</div>
-                  <div className="text-base md:text-xl font-bold font-mono">{positions.length}</div>
+                  <div className="text-base md:text-xl font-bold font-mono">{stats.activePositions}</div>
                 </div>
               </div>
             </div>

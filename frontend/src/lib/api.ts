@@ -98,9 +98,9 @@ interface BackendTradeStats {
   totalPnl: number;
   totalPnlPercent: number;
   winRate: number;
+  profitLossRatio: number;
+  expectancy: number;
   avgTradeSize: number;
-  maxDrawdown: number;
-  sharpeRatio: number;
   activePositions: number;
 }
 
@@ -238,9 +238,10 @@ export async function fetchStats(): Promise<TradeStats> {
       totalPnl: stats.totalPnl,
       totalPnlPercent: stats.totalPnlPercent,
       winRate: stats.winRate,
+      profitLossRatio: stats.profitLossRatio,
+      expectancy: stats.expectancy,
       avgTradeSize: stats.avgTradeSize,
-      maxDrawdown: stats.maxDrawdown,
-      sharpeRatio: stats.sharpeRatio,
+      activePositions: stats.activePositions,
     };
   } catch (error) {
     console.error('Failed to fetch trading stats:', error);
@@ -251,9 +252,10 @@ export async function fetchStats(): Promise<TradeStats> {
       totalPnl: 0,
       totalPnlPercent: 0,
       winRate: 0,
+      profitLossRatio: 0,
+      expectancy: 0,
       avgTradeSize: 0,
-      maxDrawdown: 0,
-      sharpeRatio: 0,
+      activePositions: 0,
     };
   }
 }
@@ -278,12 +280,14 @@ export async function stopAgent(): Promise<AgentControlResponse> {
 // Trading Strategy API types
 interface TradingStrategyResponse {
   strategy: string;
+  source?: string;
 }
 
 interface TradingStrategyUpdateResponse {
   success: boolean;
   message: string;
   timestamp: string;
+  source?: string;
 }
 
 // Trading Strategy API functions
@@ -301,6 +305,12 @@ export async function updateTradingStrategy(strategy: string): Promise<TradingSt
 export async function resetTradingStrategy(): Promise<TradingStrategyUpdateResponse> {
   return apiRequest<TradingStrategyUpdateResponse>('/trading/strategy', {
     method: 'DELETE',
+  });
+}
+
+export async function refreshTradingStrategy(): Promise<TradingStrategyUpdateResponse> {
+  return apiRequest<TradingStrategyUpdateResponse>('/trading/strategy/refresh', {
+    method: 'POST',
   });
 }
 

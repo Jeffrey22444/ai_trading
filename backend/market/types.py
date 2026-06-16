@@ -86,3 +86,18 @@ class MarketSnapshot:
     def __post_init__(self):
         if self.indicators is None:
             self.indicators = {}
+
+
+@dataclass
+class DerivativesSnapshot:
+    """Derivative market context for one symbol."""
+
+    symbol: str
+    timestamp: datetime
+    open_interest: Optional[float] = None
+    funding_rate: Optional[float] = None
+    funding_interval: Optional[str] = None
+    funding_timestamp: Optional[datetime] = None
+    mark_price: Optional[float] = None
+    index_price: Optional[float] = None
+    premium: Optional[float] = None

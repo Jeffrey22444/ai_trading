@@ -175,8 +175,8 @@ def analysis_node(tools: List):
             
             请使用可用的技术分析工具来获取 K 线数据和技术指标。
             分析完成后，为每个标的提供详细的市场分析结果。
-            指标包括：RSI、MACD、EMA、NATR（波动率指标）。
-            也需要对各个 timeframe 的指标进行细化分析和汇总。
+            指标包括：RSI、MACD、EMA、ATR、NATR（波动率指标）、最近支撑/阻力位、持仓量 OI、资金费率 Funding。
+            也需要对各个 timeframe 的指标进行细化分析和汇总，并把衍生品上下文一起纳入判断。
             
             时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             """

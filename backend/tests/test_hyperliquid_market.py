@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from market.derivatives_cache import derivatives_cache
 from market.hyperliquid_market import HyperliquidMarketClient
 
 
@@ -17,6 +18,23 @@ class FakePublicExchange:
     def fetch_ohlcv(self, symbol, timeframe, limit):
         self.calls.append((symbol, timeframe, limit))
         return [[1_000, 10, 12, 9, 11, 5]]
+
+    def fetch_funding_rates(self, symbols):
+        return {
+            symbol: {
+                "symbol": symbol,
+                "fundingRate": 0.00012,
+                "fundingTimestamp": 1_800_000,
+                "markPrice": 111.5,
+                "indexPrice": 111.1,
+                "interval": "1h",
+                "info": {
+                    "openInterest": "4567.89",
+                    "premium": "0.00045",
+                },
+            }
+            for symbol in symbols
+        }
 
     def parse_timeframe(self, timeframe):
         return {"1h": 3_600}[timeframe]
@@ -120,3 +138,19 @@ async def test_stale_market_data_is_reported_unhealthy(monkeypatch):
 
     assert client.get_status().connected is False
     await client.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_refresh_once_updates_derivatives_context(monkeypatch):
+    derivatives_cache.clear()
+    client = HyperliquidMarketClient(exchange=FakePublicExchange(), testnet=True)
+    monkeypatch.setattr(client, "symbols", ["BTC"])
+    monkeypatch.setattr(client, "timeframes", ["1h"])
+
+    await client.refresh_once(limit=1)
+
+    snapshot = derivatives_cache.get_snapshot("BTC")
+    assert snapshot is not None
+    assert snapshot.open_interest == 4567.89
+    assert snapshot.funding_rate == 0.00012
+    assert snapshot.mark_price == 111.5

@@ -9,7 +9,8 @@ import ccxt
 
 from config.settings import config
 from market.data_cache import kline_cache
-from market.types import ConnectionStatus, Kline
+from market.derivatives_cache import derivatives_cache
+from market.types import ConnectionStatus, DerivativesSnapshot, Kline
 from trading.symbols import from_exchange_symbol, to_exchange_symbol
 
 logger = logging.getLogger("AlphaTransformer")
@@ -71,6 +72,36 @@ class HyperliquidMarketClient:
             for row in rows
         ]
 
+    async def refresh_derivatives_context(self) -> None:
+        exchange_symbols = [
+            to_exchange_symbol(symbol, "hyperliquid") for symbol in self.symbols
+        ]
+        funding_rates = await asyncio.to_thread(
+            self.exchange.fetch_funding_rates, exchange_symbols
+        )
+
+        for exchange_symbol, payload in funding_rates.items():
+            logical_symbol = from_exchange_symbol(exchange_symbol)
+            info = payload.get("info", {})
+            funding_timestamp = payload.get("fundingTimestamp")
+            derivatives_cache.update_snapshot(
+                DerivativesSnapshot(
+                    symbol=logical_symbol,
+                    timestamp=self.clock(),
+                    open_interest=_coerce_float(info.get("openInterest")),
+                    funding_rate=_coerce_float(payload.get("fundingRate")),
+                    funding_interval=payload.get("interval"),
+                    funding_timestamp=(
+                        datetime.fromtimestamp(funding_timestamp / 1000)
+                        if funding_timestamp
+                        else None
+                    ),
+                    mark_price=_coerce_float(payload.get("markPrice")),
+                    index_price=_coerce_float(payload.get("indexPrice")),
+                    premium=_coerce_float(info.get("premium")),
+                )
+            )
+
     async def refresh_once(self, limit: int = 100) -> None:
         requests = [
             self.get_klines(symbol, timeframe, limit)
@@ -80,6 +111,10 @@ class HyperliquidMarketClient:
         for klines in await asyncio.gather(*requests):
             for kline in klines:
                 await kline_cache.add_kline(kline)
+        try:
+            await self.refresh_derivatives_context()
+        except Exception as exc:
+            logger.warning("Hyperliquid 衍生品上下文刷新失败: %s", exc)
         self.connection_status.connected = True
         self.connection_status.error_message = None
         self.connection_status.last_message = self.clock()
@@ -128,3 +163,12 @@ class HyperliquidMarketClient:
             <= timedelta(seconds=self.freshness_threshold)
         )
         return self.connection_status
+
+
+def _coerce_float(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

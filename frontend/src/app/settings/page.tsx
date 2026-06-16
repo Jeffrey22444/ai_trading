@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, RotateCcw, Settings, Power, Play, Square } from "lucide-react";
+import { Save, RotateCcw, Settings, Power, Play, Square, RefreshCw } from "lucide-react";
 import {
   fetchTradingStrategy,
   updateTradingStrategy,
   resetTradingStrategy,
+  refreshTradingStrategy,
   fetchAgentStatus,
   startAgent,
   stopAgent,
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -140,6 +142,33 @@ export default function SettingsPage() {
       });
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleRefreshStrategy = async () => {
+    try {
+      setRefreshing(true);
+      setMessage(null);
+
+      const response = await refreshTradingStrategy();
+      await loadStrategy();
+
+      setMessage({
+        type: "success",
+        text: response.source
+          ? `Trading strategy cache refreshed (${response.source})`
+          : "Trading strategy cache refreshed",
+      });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to refresh trading strategy cache",
+      });
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -264,6 +293,10 @@ export default function SettingsPage() {
                   <label className="block text-sm font-bold uppercase tracking-wide text-gray-700 mb-2">
                     Trading Strategy Rules
                   </label>
+                  <p className="mb-3 text-xs text-gray-600">
+                    If you edit <code>backend/config/agent.yaml</code> while the backend is already
+                    running, use refresh to reload the file and clear the in-memory strategy cache.
+                  </p>
                   <textarea
                     value={strategy}
                     onChange={(e) => setStrategy(e.target.value)}
@@ -306,6 +339,24 @@ export default function SettingsPage() {
                       <>
                         <RotateCcw size={16} />
                         <span>RESET TO DEFAULT</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleRefreshStrategy}
+                    disabled={refreshing}
+                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-white hover:bg-gray-100 disabled:bg-gray-200 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wide text-sm border-2 border-black transition-colors duration-200"
+                  >
+                    {refreshing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                        <span>REFRESHING...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={16} />
+                        <span>REFRESH ACTIVE CONFIG</span>
                       </>
                     )}
                   </button>

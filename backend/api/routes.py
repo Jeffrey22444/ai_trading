@@ -9,16 +9,21 @@ from pydantic import BaseModel
 from market.data_cache import kline_cache
 from market.market_data_client import market_data_client
 from agent.workflow import create_trading_workflow
-from agent.tools.analysis_tools import create_tech_analysis_tool
+from agent.tools.analysis_tools import create_tech_analysis_tool, tech_analysis_tool
 from agent.models import analysis_service
 from agent.scheduler import get_scheduler
 from database.database import init_database
-from config.settings import config
+from config.settings import config, reload_config
 from config.agent_config import is_missing_secret
 from utils.logger import logger
 from trading.factory import get_trader
 from trading.position_service import get_position_service
-from services.prompt_service import get_trading_strategy, set_trading_strategy
+from services.prompt_service import (
+    get_trading_strategy,
+    get_trading_strategy_field_catalog,
+    set_trading_strategy,
+    validate_trading_strategy,
+)
 
 router = APIRouter()
 
@@ -48,6 +53,20 @@ class CacheInfoResponse(BaseModel):
     total_symbols: int
     max_klines_per_timeframe: int
     symbol_details: Dict[str, Dict[str, Any]]
+
+
+class StrategyValidationResponse(BaseModel):
+    valid: bool
+    referenced_fields: List[str]
+    unknown_fields: List[str]
+    catalog: Dict[str, Any]
+
+
+class MarketContextResponse(BaseModel):
+    symbol: str
+    market_data_connected: bool
+    generated_at: str
+    context: Dict[str, Any]
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -142,6 +161,26 @@ async def get_symbol_snapshot(symbol: str):
         "snapshot": snapshot,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.get("/market/context/{symbol}", response_model=MarketContextResponse)
+async def get_market_context(symbol: str):
+    """Expose the exact structured market context the agent can reference."""
+    logical_symbol = symbol.strip().upper()
+    if logical_symbol not in config.agent.symbols:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not configured")
+
+    status = market_data_client.get_status()
+    context = tech_analysis_tool(logical_symbol)
+    if "error" in context:
+        raise HTTPException(status_code=500, detail=context["error"])
+
+    return MarketContextResponse(
+        symbol=logical_symbol,
+        market_data_connected=status.connected,
+        generated_at=datetime.now().isoformat(),
+        context=context,
+    )
 
 
 @router.get("/cache/info", response_model=CacheInfoResponse)
@@ -602,9 +641,9 @@ class TradeStatsResponse(BaseModel):
     totalPnl: float
     totalPnlPercent: float
     winRate: float
+    profitLossRatio: float
+    expectancy: float
     avgTradeSize: float
-    maxDrawdown: float
-    sharpeRatio: float
     activePositions: int
 
 
@@ -657,7 +696,8 @@ async def get_trade_stats(days: int = 30):
     try:
         from trading.history_service import get_history_service
         history_service = get_history_service()
-        
+
+        await history_service.sync_recent_trades(hours=24)
         stats = await history_service.get_trade_statistics(days=days)
         
         return TradeStatsResponse(**stats)
@@ -725,6 +765,7 @@ async def sync_trading_history(full_sync: bool = False):
 class TradingStrategyResponse(BaseModel):
     strategy: str
     source: str  # "database", "config", or "default"
+    validation: Optional[StrategyValidationResponse] = None
 
 class TradingStrategyRequest(BaseModel):
     strategy: str
@@ -733,38 +774,70 @@ class TradingStrategyUpdateResponse(BaseModel):
     success: bool
     message: str
     timestamp: datetime
+    source: Optional[str] = None
+    validation: Optional[StrategyValidationResponse] = None
+
+
+async def _resolve_trading_strategy_source() -> str:
+    """Return the currently effective trading-strategy source."""
+    from database.database import get_session_maker
+    from database.models import SystemConfig
+    from sqlalchemy import select
+
+    source = "default"
+    try:
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SystemConfig).where(SystemConfig.key == "trading_strategy")
+            )
+            config_row = result.scalar_one_or_none()
+
+            if config_row and config_row.value.strip():
+                source = "database"
+            elif hasattr(config.agent, "trading_strategy") and config.agent.trading_strategy:
+                source = "config"
+    except Exception:
+        if hasattr(config.agent, "trading_strategy") and config.agent.trading_strategy:
+            source = "config"
+
+    return source
+
+
+def _build_strategy_validation_response(strategy: str) -> StrategyValidationResponse:
+    validation = validate_trading_strategy(strategy)
+    return StrategyValidationResponse(
+        valid=validation.valid,
+        referenced_fields=validation.referenced_fields,
+        unknown_fields=validation.unknown_fields,
+        catalog=get_trading_strategy_field_catalog(),
+    )
 
 
 # Trading Strategy Endpoints
+@router.get("/trading/strategy/schema")
+async def get_trading_strategy_schema():
+    """Return the backend field catalog strategies are allowed to reference."""
+    return get_trading_strategy_field_catalog()
+
+
+@router.post("/trading/strategy/validate", response_model=StrategyValidationResponse)
+async def validate_trading_strategy_request(request: TradingStrategyRequest):
+    """Validate explicit backend-field placeholders inside a strategy body."""
+    return _build_strategy_validation_response(request.strategy or "")
+
+
 @router.get("/trading/strategy", response_model=TradingStrategyResponse)
 async def get_current_trading_strategy():
     """获取当前交易策略配置"""
     try:
         strategy = await get_trading_strategy()
-        
-        # 检查来源
-        from database.database import get_session_maker
-        from database.models import SystemConfig
-        from sqlalchemy import select
-        
-        source = "default"
-        try:
-            async with get_session_maker()() as session:
-                result = await session.execute(
-                    select(SystemConfig).where(SystemConfig.key == "trading_strategy")
-                )
-                config_row = result.scalar_one_or_none()
-                
-                if config_row and config_row.value.strip():
-                    source = "database"
-                elif hasattr(config.agent, 'trading_strategy') and config.agent.trading_strategy:
-                    source = "config"
-        except Exception:
-            pass
-        
+        source = await _resolve_trading_strategy_source()
+        validation = _build_strategy_validation_response(strategy)
+
         return TradingStrategyResponse(
             strategy=strategy,
-            source=source
+            source=source,
+            validation=validation,
         )
         
     except Exception as e:
@@ -778,7 +851,17 @@ async def update_trading_strategy(request: TradingStrategyRequest):
     try:
         if not request.strategy or not request.strategy.strip():
             raise HTTPException(status_code=400, detail="交易策略内容不能为空")
-        
+
+        validation = _build_strategy_validation_response(request.strategy.strip())
+        if not validation.valid:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "交易策略引用了未注册的后端字段",
+                    "unknown_fields": validation.unknown_fields,
+                },
+            )
+
         success = await set_trading_strategy(request.strategy.strip())
         
         if success:
@@ -786,7 +869,9 @@ async def update_trading_strategy(request: TradingStrategyRequest):
             return TradingStrategyUpdateResponse(
                 success=True,
                 message="交易策略更新成功",
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
+                source="database",
+                validation=validation,
             )
         else:
             raise HTTPException(status_code=500, detail="更新交易策略失败")
@@ -818,12 +903,40 @@ async def reset_trading_strategy():
         clear_strategy_cache()
         
         logger.info("交易策略已重置为默认值")
+        strategy = await get_trading_strategy()
         return TradingStrategyUpdateResponse(
             success=True,
             message="交易策略已重置为默认值",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            source=await _resolve_trading_strategy_source(),
+            validation=_build_strategy_validation_response(strategy),
         )
         
     except Exception as e:
         logger.error(f"重置交易策略失败: {e}")
         raise HTTPException(status_code=500, detail=f"重置交易策略失败: {str(e)}")
+
+
+@router.post("/trading/strategy/refresh", response_model=TradingStrategyUpdateResponse)
+async def refresh_trading_strategy():
+    """Reload config/agent.yaml and clear the in-memory strategy cache."""
+    try:
+        reload_config()
+
+        from services.prompt_service import clear_strategy_cache
+
+        clear_strategy_cache()
+        strategy = await get_trading_strategy()
+        source = await _resolve_trading_strategy_source()
+
+        logger.info("交易策略缓存与配置已刷新")
+        return TradingStrategyUpdateResponse(
+            success=True,
+            message="交易策略缓存与配置已刷新",
+            timestamp=datetime.now(),
+            source=source,
+            validation=_build_strategy_validation_response(strategy),
+        )
+    except Exception as e:
+        logger.error(f"刷新交易策略失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新交易策略失败: {str(e)}")

@@ -38,9 +38,10 @@ export interface TradeStats {
   totalPnl: number;
   totalPnlPercent: number;
   winRate: number;
+  profitLossRatio: number;
+  expectancy: number;
   avgTradeSize: number;
-  maxDrawdown: number;
-  sharpeRatio: number;
+  activePositions: number;
 }
 
 // Component Props

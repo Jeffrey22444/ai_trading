@@ -9,7 +9,10 @@ const CONTROLLED_PATHS = [
   '/api/trading/history/sync',
 ]
 
-const WRITE_ONLY_BLOCKED_PATHS = ['/api/trading/strategy']
+const WRITE_ONLY_BLOCKED_PATHS = [
+  '/api/trading/strategy',
+  '/api/trading/strategy/refresh',
+]
 const WRITE_BLOCKED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function normalizePath(pathname: string) {

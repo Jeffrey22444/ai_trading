@@ -2,6 +2,7 @@
 Trading History Service - 管理余额和订单历史数据
 """
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Any
@@ -453,6 +454,12 @@ class TradingHistoryService:
             )
             total_volume_result = await session.execute(total_volume_stmt)
             total_volume = total_volume_result.scalar() or 0.0
+
+            trade_records_stmt = select(TradeRecord).where(
+                TradeRecord.trade_time >= cutoff_date
+            )
+            trade_records_result = await session.execute(trade_records_stmt)
+            trade_records = trade_records_result.scalars().all()
             
             # 获取当前余额
             latest_balance_stmt = select(BalanceSnapshot).order_by(
@@ -483,18 +490,85 @@ class TradingHistoryService:
                 active_positions = len(positions)
             except Exception:
                 active_positions = 0
+
+            trade_metrics = self._calculate_trade_metrics_from_trade_records(
+                trade_records
+            )
             
             return {
                 "totalTrades": total_trades,
                 "totalVolume": total_volume,
                 "totalPnl": total_pnl,
                 "totalPnlPercent": (total_pnl / earliest_balance.total_balance * 100) if earliest_balance and earliest_balance.total_balance > 0 else 0.0,
-                "winRate": 65,  # TODO: 计算实际胜率
+                "winRate": trade_metrics["winRate"],
+                "profitLossRatio": trade_metrics["profitLossRatio"],
+                "expectancy": trade_metrics["expectancy"],
                 "avgTradeSize": total_volume / total_trades if total_trades > 0 else 0.0,
-                "maxDrawdown": -5.2,  # TODO: 计算实际最大回撤
-                "sharpeRatio": 1.25,  # TODO: 计算实际夏普比率
                 "activePositions": active_positions
             }
+
+    @staticmethod
+    def _calculate_closed_order_pnls(trade_records: List[TradeRecord]) -> List[float]:
+        """Aggregate net realized PnL by closed order."""
+        order_realized_pnl: Dict[str, float] = {}
+
+        for trade in trade_records:
+            raw_data = trade.raw_data or {}
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    raw_data = {}
+
+            info = raw_data.get("info", {}) if isinstance(raw_data, dict) else {}
+            # Hyperliquid fills expose closedPnl while some exchanges/adapters use realizedPnl.
+            realized_pnl = info.get("realizedPnl")
+            if realized_pnl in (None, ""):
+                realized_pnl = info.get("closedPnl", 0)
+            try:
+                realized_pnl_value = float(realized_pnl or 0.0)
+            except (TypeError, ValueError):
+                realized_pnl_value = 0.0
+
+            if realized_pnl_value == 0:
+                continue
+
+            order_realized_pnl[trade.order_id] = (
+                order_realized_pnl.get(trade.order_id, 0.0)
+                + realized_pnl_value
+                - float(trade.fee_cost or 0.0)
+            )
+
+        return [pnl for pnl in order_realized_pnl.values() if pnl != 0]
+
+    @classmethod
+    def _calculate_trade_metrics_from_trade_records(
+        cls, trade_records: List[TradeRecord]
+    ) -> Dict[str, float]:
+        """Calculate win rate, profit/loss ratio, and expectancy from closed orders."""
+        closed_orders = cls._calculate_closed_order_pnls(trade_records)
+        if not closed_orders:
+            return {
+                "winRate": 0.0,
+                "profitLossRatio": 0.0,
+                "expectancy": 0.0,
+            }
+
+        winning_trades = [pnl for pnl in closed_orders if pnl > 0]
+        losing_trades = [abs(pnl) for pnl in closed_orders if pnl < 0]
+
+        win_rate_ratio = len(winning_trades) / len(closed_orders)
+        avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0.0
+        avg_loss = sum(losing_trades) / len(losing_trades) if losing_trades else 0.0
+
+        profit_loss_ratio = avg_win / avg_loss if avg_win > 0 and avg_loss > 0 else 0.0
+        expectancy = win_rate_ratio * avg_win - (1 - win_rate_ratio) * avg_loss
+
+        return {
+            "winRate": win_rate_ratio * 100,
+            "profitLossRatio": profit_loss_ratio,
+            "expectancy": expectancy,
+        }
 
 
 # 全局服务实例
