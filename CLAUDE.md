@@ -28,7 +28,7 @@ Python 3.11+ (backend), TypeScript/React (frontend): Follow standard conventions
 <!-- MANUAL ADDITIONS START -->
 ## Project Memory System
 
-This project maintains institutional knowledge in `docs/project_notes/` for consistency across sessions.
+This AI_trading workspace maintains institutional knowledge in `../docs/project_notes/` for consistency across sessions.
 
 ### Memory Files
 
@@ -40,21 +40,21 @@ This project maintains institutional knowledge in `docs/project_notes/` for cons
 ### Memory-Aware Protocols
 
 **Before proposing architectural changes:**
-- Check `docs/project_notes/decisions.md` for existing decisions
+- Check `../docs/project_notes/decisions.md` for existing decisions
 - Verify the proposed approach doesn't conflict with past choices
 - If it does conflict, acknowledge the existing decision and explain why a change is warranted
 
 **When encountering errors or bugs:**
-- Search `docs/project_notes/bugs.md` for similar issues
+- Search `../docs/project_notes/bugs.md` for similar issues
 - Apply known solutions if found
 - Document new bugs and solutions when resolved
 
 **When looking up project configuration:**
-- Check `docs/project_notes/key_facts.md` for credentials, ports, URLs, service accounts
+- Check `../docs/project_notes/key_facts.md` for ports, URLs, paths, and non-sensitive config
 - Prefer documented facts over assumptions
 
 **When completing work on tickets:**
-- Log completed work in `docs/project_notes/issues.md`
+- Log completed work in `../docs/project_notes/issues.md`
 - Include ticket ID, date, brief description, and URL
 
 **When user requests memory updates:**
