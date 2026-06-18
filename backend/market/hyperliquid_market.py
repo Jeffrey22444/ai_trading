@@ -37,6 +37,7 @@ class HyperliquidMarketClient:
         self.symbols = config.agent.symbols
         self.timeframes = config.agent.timeframes
         self.is_connected = False
+        self._polling_enabled = False
         self.connection_status = ConnectionStatus(
             exchange="hyperliquid-testnet" if self.testnet else "hyperliquid",
             connected=False,
@@ -137,10 +138,15 @@ class HyperliquidMarketClient:
 
     async def run_polling_loop(self) -> None:
         """Refresh configured Hyperliquid markets until disconnected."""
-        while self.is_connected:
+        self._polling_enabled = True
+        while self._polling_enabled:
             try:
                 await asyncio.sleep(self.poll_interval)
-                if self.is_connected:
+                if not self._polling_enabled:
+                    break
+                if not self.is_connected:
+                    await self.connect()
+                else:
                     await self.refresh_once(limit=2)
             except Exception as exc:
                 logger.error("Hyperliquid 行情轮询失败: %s", exc)
@@ -148,6 +154,7 @@ class HyperliquidMarketClient:
                 self.connection_status.reconnect_count += 1
 
     async def disconnect(self) -> None:
+        self._polling_enabled = False
         self.is_connected = False
         self.connection_status.connected = False
 

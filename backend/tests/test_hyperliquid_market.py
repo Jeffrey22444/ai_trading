@@ -110,7 +110,9 @@ async def test_polling_disconnect_stops_message_loop(monkeypatch):
 @pytest.mark.asyncio
 async def test_polling_recovers_after_transient_failure(monkeypatch):
     exchange = TransientFailureExchange()
-    client = HyperliquidMarketClient(exchange=exchange, testnet=True, poll_interval=0.001)
+    client = HyperliquidMarketClient(
+        exchange=exchange, testnet=True, poll_interval=0.001
+    )
     monkeypatch.setattr(client, "symbols", ["BTC"])
     monkeypatch.setattr(client, "timeframes", ["1h"])
     assert await client.connect() is True
@@ -120,6 +122,26 @@ async def test_polling_recovers_after_transient_failure(monkeypatch):
     await asyncio.sleep(0.01)
     assert client.get_status().connected is True
     assert client.get_status().reconnect_count == 1
+    await client.disconnect()
+    await asyncio.wait_for(task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_polling_retries_after_initial_connect_failure(monkeypatch):
+    exchange = TransientFailureExchange()
+    exchange.fail_next = True
+    client = HyperliquidMarketClient(
+        exchange=exchange, testnet=True, poll_interval=0.001
+    )
+    monkeypatch.setattr(client, "symbols", ["BTC"])
+    monkeypatch.setattr(client, "timeframes", ["1h"])
+
+    assert await client.connect() is False
+
+    task = asyncio.create_task(client.run_polling_loop())
+    await asyncio.sleep(0.01)
+
+    assert client.get_status().connected is True
     await client.disconnect()
     await asyncio.wait_for(task, timeout=1)
 

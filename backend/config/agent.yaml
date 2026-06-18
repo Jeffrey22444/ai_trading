@@ -46,7 +46,7 @@ default_risk:
 kelly:
   fraction: 0.35
   hard_cap: 0.20
-  min_position_usd: 100
+  min_position_usd: 70
   payoff_ratio_b: 2.0
 
 leverage:
