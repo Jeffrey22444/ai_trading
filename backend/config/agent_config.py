@@ -110,6 +110,67 @@ class RiskConfig(BaseModel):
     stop_loss_percent: float
 
 
+class KellyConfig(BaseModel):
+    fraction: float = 0.35
+    hard_cap: float = 0.20
+    min_position_usd: float = 100.0
+    payoff_ratio_b: float = 2.0
+
+
+class LeverageConfig(BaseModel):
+    max_leverage: int = 3
+    score_to_leverage: Dict[str, int] = {
+        "6-7": 1,
+        "7-8": 2,
+        "8-9": 3,
+        "9-10": 3,
+    }
+    fraction_by_leverage: Dict[int, float] = {
+        1: 0.35,
+        2: 0.35,
+        3: 0.30,
+        4: 0.25,
+        5: 0.25,
+    }
+
+
+class ScoringConfig(BaseModel):
+    entry_score_threshold: float = 6.0
+    min_direction_edge: float = 1.0
+    trend_timeframes: list[str] = ["1h", "4h"]
+    momentum_timeframe: str = "4h"
+    fallback_momentum_timeframe: str = "1h"
+    volatility_timeframe: str = "4h"
+    score_weights: Dict[str, float] = {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+    }
+    score_to_winrate: Dict[str, float] = {
+        "6-7": 0.50,
+        "7-8": 0.53,
+        "8-9": 0.56,
+        "9-10": 0.58,
+    }
+    benchmark_symbol: str = "BTC"
+    core_symbols: list[str] = ["BTC", "ETH", "SOL"]
+    high_volatility_natr: float = 5.0
+    extreme_volatility_natr: float = 10.0
+    extreme_funding_abs: float = 0.001
+
+
+class StopConfig(BaseModel):
+    timeframe: str = "4h"
+    fallback_timeframe: str = "1h"
+    atr_stop_multiplier: float = 1.5
+    high_volatility_atr_stop_multiplier: float = 2.0
+    swing_lookback: int = 20
+    swing_strength_m: int = 2
+    swing_buffer_atr_fraction: float = 0.10
+
+
 class AccountSnapshotConfig(BaseModel):
     enabled: bool = True
     interval_minutes: int = 15
@@ -134,6 +195,10 @@ class AppConfig(BaseModel):
     agent: AgentConfig
     exchange: ExchangeConfig
     default_risk: RiskConfig
+    kelly: KellyConfig = KellyConfig()
+    leverage: LeverageConfig = LeverageConfig()
+    scoring: ScoringConfig = ScoringConfig()
+    stop: StopConfig = StopConfig()
     account_snapshot: AccountSnapshotConfig
     logging: LoggingConfig
     system: SystemConfig

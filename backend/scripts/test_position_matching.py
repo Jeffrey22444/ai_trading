@@ -17,6 +17,7 @@ if env_file.exists():
     load_dotenv(env_file)
 
 from trading import get_trader
+from trading.symbols import same_symbol
 
 
 async def test_position_matching():
@@ -30,7 +31,7 @@ async def test_position_matching():
         print(f"持仓数量: {len(positions)}")
         
         # 2. 测试符号匹配
-        test_symbols = ['SOLUSDT', 'ETHUSDT', 'BTCUSDT']
+        test_symbols = ["SOL", "ETH", "BTC"]
         
         for symbol in test_symbols:
             print(f"\n🔍 测试符号: {symbol}")
@@ -39,12 +40,12 @@ async def test_position_matching():
             matching_position = None
             for pos in positions:
                 # 标准化符号比较
-                pos_symbol_normalized = pos.symbol.replace('/', '').replace(':USDT', '')
-                symbol_normalized = symbol.replace('/', '').replace(':USDT', '')
+                pos_symbol_normalized = pos.symbol
+                symbol_normalized = symbol
                 
                 print(f"  比较: '{pos_symbol_normalized}' vs '{symbol_normalized}'")
                 
-                if pos_symbol_normalized == symbol_normalized:
+                if same_symbol(pos_symbol_normalized, symbol_normalized):
                     matching_position = pos
                     break
             
@@ -58,12 +59,12 @@ async def test_position_matching():
                 print(f"  ❌ 未找到匹配持仓")
         
         # 3. 测试平仓功能
-        print(f"\n🔧 测试 SOLUSDT 平仓功能...")
+        print(f"\n🔧 测试 SOL 平仓功能...")
         try:
-            await trader.close_long("SOLUSDT", 0)  # 尝试全部平仓
-            print("✅ SOLUSDT 平多仓成功")
+            await trader.close_long("SOL", 0)  # 尝试全部平仓
+            print("✅ SOL 平多仓成功")
         except Exception as e:
-            print(f"❌ SOLUSDT 平多仓失败: {e}")
+            print(f"❌ SOL 平多仓失败: {e}")
         
         # 4. 检查平仓后的持仓
         print(f"\n🔍 检查平仓后的持仓...")

@@ -225,7 +225,7 @@ def tech_analysis_tool(symbol: str) -> Dict[str, Any]:
     Multi-timeframe technical analysis tool for AI agent using TA-Lib
     
     Args:
-        symbol: Trading symbol (e.g., "BTCUSDT")
+        symbol: Trading symbol (preferred runtime input: "BTC")
     
     Returns:
         Dict containing multi-timeframe technical analysis

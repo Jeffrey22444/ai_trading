@@ -21,7 +21,8 @@ def test_validate_trading_strategy_accepts_registered_fields():
             "strategy": (
                 "4h 波动率参考 {{timeframes.4h.atr}}，"
                 "资金费率参考 {{derivatives.funding_rate}}，"
-                "趋势方向参考 {{overall_signals.trend_direction}}。"
+                "趋势方向参考 {{overall_signals.trend_direction}}，"
+                "量化评分参考 {{quant_guardrail.total_score}}。"
             )
         },
     )
@@ -31,6 +32,21 @@ def test_validate_trading_strategy_accepts_registered_fields():
     assert payload["valid"] is True
     assert payload["unknown_fields"] == []
     assert "timeframes.4h.atr" in payload["referenced_fields"]
+    assert "quant_guardrail.total_score" in payload["referenced_fields"]
+
+
+def test_validate_trading_strategy_rejects_unknown_quant_guardrail_fields():
+    client = _build_client()
+
+    response = client.post(
+        "/api/v1/trading/strategy/validate",
+        json={"strategy": "使用 {{quant_guardrail.imaginary_score}} 决策"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is False
+    assert payload["unknown_fields"] == ["quant_guardrail.imaginary_score"]
 
 
 def test_update_trading_strategy_rejects_unknown_fields():

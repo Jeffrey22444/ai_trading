@@ -167,7 +167,7 @@ async def _execute_futures_trading(symbol: str, decision: Dict[str, Any], trader
 async def _execute_open_long(symbol: str, decision: Dict, trader, current_price: float, balance) -> Dict[str, Any]:
     """执行开多仓"""
     position_size_usd = decision.get("position_size_usd", 0)
-    leverage = config.exchange.default_leverage  # 从配置获取默认杠杆
+    leverage = _decision_leverage(decision)
     
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
@@ -205,7 +205,7 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
 async def _execute_open_short(symbol: str, decision: Dict, trader, current_price: float, balance) -> Dict[str, Any]:
     """执行开空仓"""
     position_size_usd = decision.get("position_size_usd", 0)
-    leverage = config.exchange.default_leverage  # 从配置获取默认杠杆
+    leverage = _decision_leverage(decision)
     
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
@@ -276,3 +276,12 @@ async def _execute_close_short(symbol: str, decision: Dict, trader, current_posi
         "quantity": current_position.size,
         "message": f"平空仓成功: {current_position.size}"
     }
+
+
+def _decision_leverage(decision: Dict[str, Any]) -> int:
+    leverage = int(decision.get("leverage") or config.exchange.default_leverage)
+    if leverage < 1:
+        raise ValueError("杠杆必须大于等于 1")
+    if leverage > config.leverage.max_leverage:
+        raise ValueError(f"杠杆超过配置上限 {config.leverage.max_leverage}x")
+    return leverage

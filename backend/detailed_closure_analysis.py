@@ -7,6 +7,8 @@ import sqlite3
 import json
 import re
 from datetime import datetime
+
+from trading.symbols import from_exchange_symbol
 import pandas as pd
 
 def connect_db():
@@ -97,7 +99,8 @@ def analyze_symbol_performance():
         
         try:
             symbol_decisions = json.loads(symbol_decisions_json)
-            symbol_clean = symbol.replace('/USDT:USDT', 'USDT') if symbol else None
+            # Normalize legacy exchange-formatted symbols for historical analysis only.
+            symbol_clean = from_exchange_symbol(symbol) if symbol else None
             
             for sym, decision_data in symbol_decisions.items():
                 if decision_data.get('action', '').startswith('CLOSE_') and sym == symbol_clean:

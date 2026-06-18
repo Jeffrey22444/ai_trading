@@ -23,10 +23,10 @@ async def test_natr():
     """测试 NATR 指标"""
     
     try:
-        print("🔍 测试 BTCUSDT 的技术分析（包含 NATR）...")
+        print("🔍 测试 BTC 的技术分析（包含 NATR）...")
         
         # 调用技术分析工具
-        result = tech_analysis_tool("BTCUSDT")
+        result = tech_analysis_tool("BTC")
         
         print(f"分析结果:")
         print(f"标的: {result.get('symbol')}")

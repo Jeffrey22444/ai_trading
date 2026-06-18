@@ -9,6 +9,13 @@ import re
 from datetime import datetime, timedelta
 import pandas as pd
 
+from trading.symbols import from_exchange_symbol
+
+
+def _symbol_search_token(symbol: str) -> str:
+    """Build a loose SQL LIKE token from logical or legacy symbols."""
+    return from_exchange_symbol(symbol)
+
 def connect_db():
     return sqlite3.connect("data/trading.db")
 
@@ -71,7 +78,7 @@ def get_price_data_around_decision(symbol, timestamp, conn):
     end_time = decision_time + timedelta(minutes=30)
     
     cursor = conn.execute(query, (
-        f"%{symbol.replace('USDT', '')}%",
+        f"%{_symbol_search_token(symbol)}%",
         start_time.isoformat(),
         end_time.isoformat(),
         timestamp
@@ -114,7 +121,7 @@ def analyze_decision_outcomes():
                     WHERE analysis_id = ? AND symbol LIKE ? AND side = 'SELL' AND status = 'closed'
                     """
                     
-                    order_cursor = conn.execute(order_query, (analysis_id, f"%{symbol.replace('USDT', '')}%"))
+                    order_cursor = conn.execute(order_query, (analysis_id, f"%{_symbol_search_token(symbol)}%"))
                     order_result = order_cursor.fetchone()
                     
                     decision_record = {

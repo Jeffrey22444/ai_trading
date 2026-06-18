@@ -83,13 +83,27 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
     return pnl >= 0 ? 'text-green-600' : 'text-red-600';
   };
 
+  const displaySymbol = (symbol: string) => {
+    return symbol.replace('/USDC:USDC', '').replace('USDC', '').replace('USDT', '').replace('USD', '');
+  };
+
   const formatPnl = (pnl?: number) => {
     if (pnl === undefined) return '-';
     return pnl >= 0 ? `$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
   };
 
+  const formatCurrency = (value?: number | null) => {
+    if (value === undefined || value === null) return '-';
+    return `$${value.toFixed(2)}`;
+  };
+
+  const formatPercent = (value?: number | null) => {
+    if (value === undefined || value === null) return '-';
+    return `${(value * 100).toFixed(1)}%`;
+  };
+
   const getCoinIcon = (symbol: string) => {
-    const coin = symbol.replace('USDT', '').replace('USD', '');
+    const coin = displaySymbol(symbol);
     switch (coin) {
       case 'BTC':
         return '₿';
@@ -156,34 +170,94 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
                 {/* Actions */}
                 <div className="space-y-2">
                   {decision.actions.map((tradeAction, actionIndex) => (
-                    <div key={actionIndex} className="flex items-center space-x-2 text-sm">
-                      {tradeAction.action === 'HOLD' ? (
-                        <>
-                          <span className="text-gray-500">Hold position on</span>
-                          <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
-                          <span className="font-bold text-black">
-                            {tradeAction.symbol.replace('USDT', '').replace('USD', '')}
+                    <div key={actionIndex} className="space-y-1">
+                      <div className="flex items-center space-x-2 text-sm">
+                        {tradeAction.action === 'HOLD' ? (
+                          <>
+                            <span className="text-gray-500">Hold position on</span>
+                            <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
+                            <span className="font-bold text-black">
+                              {displaySymbol(tradeAction.symbol)}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-gray-500">
+                              {tradeAction.action.includes('OPEN') ? 'Open a' : 'Close a'}
+                            </span>
+                            <span className={`font-bold ${getActionColor(tradeAction.action)}`}>
+                              {tradeAction.action.includes('LONG') ? 'long' : 'short'}
+                            </span>
+                            <span className="text-gray-500">trade on</span>
+                            <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
+                            <span className="font-bold text-black">
+                              {displaySymbol(tradeAction.symbol)}
+                            </span>
+                          </>
+                        )}
+                        {tradeAction.pnl !== undefined && (
+                          <span className={`font-bold ${getPnlColor(tradeAction.pnl)} ml-2`}>
+                            {formatPnl(tradeAction.pnl)}
                           </span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-gray-500">
-                            {tradeAction.action.includes('OPEN') ? 'Open a' : 'Close a'}
-                          </span>
-                          <span className={`font-bold ${getActionColor(tradeAction.action)}`}>
-                            {tradeAction.action.includes('LONG') ? 'long' : 'short'}
-                          </span>
-                          <span className="text-gray-500">trade on</span>
-                          <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
-                          <span className="font-bold text-black">
-                            {tradeAction.symbol.replace('USDT', '').replace('USD', '')}
-                          </span>
-                        </>
-                      )}
-                      {tradeAction.pnl !== undefined && (
-                        <span className={`font-bold ${getPnlColor(tradeAction.pnl)} ml-2`}>
-                          {formatPnl(tradeAction.pnl)}
-                        </span>
+                        )}
+                      </div>
+
+                      {tradeAction.quantGuardrail && (
+                        <div className="ml-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] leading-4 text-gray-600 font-mono sm:grid-cols-4">
+                          <div>
+                            <span className="text-gray-400">Score</span>{' '}
+                            <span className="text-black font-semibold">
+                              {tradeAction.quantGuardrail.total_score.toFixed(1)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Bias</span>{' '}
+                            <span className="text-black font-semibold">
+                              {tradeAction.quantGuardrail.direction_bias}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Size</span>{' '}
+                            <span className="text-black font-semibold">
+                              {formatCurrency(tradeAction.positionSizeUsd ?? tradeAction.quantGuardrail.sizing?.position_size_usd)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Lev</span>{' '}
+                            <span className="text-black font-semibold">
+                              {tradeAction.leverage ?? tradeAction.quantGuardrail.sizing?.leverage ?? '-'}x
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">SL</span>{' '}
+                            <span className="text-black font-semibold">
+                              {formatCurrency(tradeAction.stopLossPrice)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">TP</span>{' '}
+                            <span className="text-black font-semibold">
+                              {formatCurrency(tradeAction.takeProfitPrice)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">p</span>{' '}
+                            <span className="text-black font-semibold">
+                              {formatPercent(tradeAction.quantGuardrail.sizing?.winrate)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Allowed</span>{' '}
+                            <span className="text-black font-semibold">
+                              {tradeAction.quantGuardrail.allowed_action}
+                            </span>
+                          </div>
+                          {tradeAction.quantGuardrail.hold_reason && (
+                            <div className="col-span-2 text-gray-500 sm:col-span-4">
+                              {tradeAction.quantGuardrail.hold_reason}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

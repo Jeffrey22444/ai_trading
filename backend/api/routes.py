@@ -255,6 +255,11 @@ class SymbolDecisionResponse(BaseModel):
     reasoning: str
     execution_status: str
     execution_result: Optional[Dict[str, Any]] = None
+    position_size_usd: Optional[float] = None
+    stop_loss_price: Optional[float] = None
+    take_profit_price: Optional[float] = None
+    leverage: Optional[int] = None
+    quant_guardrail: Optional[Dict[str, Any]] = None
 
 
 class AgentAnalysisResponse(BaseModel):
@@ -302,7 +307,12 @@ async def run_agent_analysis():
                 action=decision["action"],
                 reasoning=decision["reasoning"],
                 execution_status=decision["execution_status"],
-                execution_result=decision["execution_result"]
+                execution_result=decision["execution_result"],
+                position_size_usd=decision.get("position_size_usd"),
+                stop_loss_price=decision.get("stop_loss_price"),
+                take_profit_price=decision.get("take_profit_price"),
+                leverage=decision.get("leverage"),
+                quant_guardrail=decision.get("quant_guardrail"),
             )
         
         response = AgentAnalysisResponse(

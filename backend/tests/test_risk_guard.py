@@ -1,5 +1,6 @@
 import pytest
 
+from agent.nodes.trading_execution_node import _decision_leverage
 from trading.risk_guard import normalize_position_size_usd, validate_open_decision
 
 
@@ -79,3 +80,12 @@ def test_position_limit_rejects_more_than_one_cent_overage():
             available_balance=999.542939,
             max_position_size_percent=0.2,
         )
+
+
+def test_execution_uses_decision_level_quant_leverage():
+    assert _decision_leverage({"leverage": 3}) == 3
+
+
+def test_execution_rejects_leverage_above_quant_config():
+    with pytest.raises(ValueError, match="杠杆超过配置上限"):
+        _decision_leverage({"leverage": 99})

@@ -11,6 +11,36 @@ export interface TradeAction {
   price?: number;
   pnl?: number;
   holdingTime?: string;
+  positionSizeUsd?: number | null;
+  stopLossPrice?: number | null;
+  takeProfitPrice?: number | null;
+  leverage?: number | null;
+  quantGuardrail?: QuantGuardrail | null;
+}
+
+export interface QuantGuardrail {
+  direction_bias: 'LONG' | 'SHORT' | 'NEUTRAL';
+  total_score: number;
+  action_allowed: boolean;
+  allowed_action: string;
+  hold_reason?: string | null;
+  sizing?: {
+    position_size_usd?: number | null;
+    leverage?: number | null;
+    winrate?: number | null;
+    margin_used_usd?: number | null;
+  };
+  stops?: {
+    long?: QuantStopSide;
+    short?: QuantStopSide;
+  };
+}
+
+export interface QuantStopSide {
+  stop_loss?: number | null;
+  take_profit?: number | null;
+  stop_source?: string | null;
+  risk_reward?: number | null;
 }
 
 export interface Decision {

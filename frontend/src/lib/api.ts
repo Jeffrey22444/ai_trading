@@ -65,6 +65,11 @@ interface BackendDecisionResponse {
     action: string;
     reasoning: string;
     execution_status: string;
+    position_size_usd?: number | null;
+    stop_loss_price?: number | null;
+    take_profit_price?: number | null;
+    leverage?: number | null;
+    quant_guardrail?: any;
     execution_result?: {
       status: string;
       action: string;
@@ -129,6 +134,11 @@ function transformDecisionData(backendDecision: BackendDecisionResponse): Decisi
     symbol,
     quantity: decision.execution_result?.quantity,
     price: decision.execution_result?.price,
+    positionSizeUsd: decision.position_size_usd,
+    stopLossPrice: decision.stop_loss_price,
+    takeProfitPrice: decision.take_profit_price,
+    leverage: decision.leverage,
+    quantGuardrail: decision.quant_guardrail,
     // Note: Backend doesn't provide pnl and holdingTime in this format
     // These might need to be calculated or fetched separately
   }));

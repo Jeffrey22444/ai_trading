@@ -4,6 +4,10 @@ import { formatNumber } from '@/lib/utils';
 import type { PositionsListProps, Position } from '@/lib/types';
 
 const PositionsList: React.FC<PositionsListProps> = ({ positions }) => {
+  const displaySymbol = (symbol: string) => {
+    return symbol.replace('/USDC:USDC', '').replace('USDC', '').replace('USDT', '').replace('USD', '');
+  };
+
   const formatPnl = (pnl: number) => {
     return pnl >= 0 ? `$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
   };
@@ -17,7 +21,7 @@ const PositionsList: React.FC<PositionsListProps> = ({ positions }) => {
   };
 
   const getCoinIcon = (symbol: string) => {
-    const coin = symbol.replace('USDT', '').replace('USD', '');
+    const coin = displaySymbol(symbol);
     switch (coin) {
       case 'BTC':
         return '₿';
@@ -66,7 +70,7 @@ const PositionsList: React.FC<PositionsListProps> = ({ positions }) => {
                 <div className="flex items-center space-x-2">
                   <span className="text-lg">{getCoinIcon(position.symbol)}</span>
                   <span className="font-medium">
-                    {position.symbol.replace('USDT', '').replace('USD', '')}
+                    {displaySymbol(position.symbol)}
                   </span>
                 </div>
 

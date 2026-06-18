@@ -1,92 +1,51 @@
 # Scripts 目录
 
-这个目录包含了 AlphaTransformer 的测试脚本和分析工具。
+这个目录放的是当前 Hyperliquid-only 运行时的辅助脚本和分析说明。
 
-## 📁 目录结构
+## 当前文件
 
-- **测试脚本** (`*.py`) - 系统功能测试
-- **分析工具** (`analysis/`) - 交易性能分析和监控工具
+- `hyperliquid_acceptance.py` - Hyperliquid 验收脚本
+- `p0_acceptance.py` - P0 本地验收脚本
+- `test_agent_trading.py` - Agent 交易链路测试
+- `test_simple_agent.py` - 简化版 Agent 测试
+- `test_futures_trading.py` - 交易接口与下单辅助检查
+- `test_position_matching.py` - 持仓匹配与平仓路径检查
+- `debug_positions.py` - 打印原始和归一化后的持仓信息
+- `test_natr.py` - 技术分析工具 NATR 输出检查
+- `analysis/README.md` - 分析工具说明
 
-## 📁 文件说明
+## 使用前提
 
-### 测试脚本
-- `test_openai.py` - OpenAI GPT-4 连接测试
-- `test_agent.py` - 完整 LangGraph Agent 工作流程测试  
-- `run_tests.py` - 统一测试运行脚本
-- `debug_positions.py` - 持仓调试工具
-- `test_futures_trading.py` - 期货交易功能测试
-- `test_simple_agent.py` - 简化代理测试
+- 在 `backend/.env` 配置：
+  - `OPENAI_API_KEY`
+  - `HYPERLIQUID_WALLET_ADDRESS`
+  - `HYPERLIQUID_PRIVATE_KEY`
+- 从 `opennof1/backend` 目录运行脚本更稳妥。
+- 运行时逻辑标的统一使用 `BTC`、`ETH`、`SOL`。
+- 若脚本内部需要交易所格式，应由后端在 CCXT 边界自行转换为 `BASE/USDC:USDC`。
 
-### 分析工具
-- **`analysis/`** - 详细的交易分析和监控工具 ([查看文档](./analysis/README.md))
-
-## 🚀 使用方法
-
-### 方法 1: 使用统一运行脚本 (推荐)
-
-```bash
-# 测试 OpenAI 连接
-python scripts/run_tests.py openai
-
-# 测试完整 Agent 工作流程
-python scripts/run_tests.py agent
-
-# 运行所有测试
-python scripts/run_tests.py all
-```
-
-### 方法 2: 直接运行单个脚本
+## 常用命令
 
 ```bash
-# 测试 OpenAI 连接
-python scripts/test_openai.py
+cd /Users/jeffrey/Documents/AI_trading/opennof1/backend
 
-# 测试完整 Agent 工作流程  
-python scripts/test_agent.py
+uv run python scripts/p0_acceptance.py
+uv run python scripts/hyperliquid_acceptance.py
+uv run python scripts/test_simple_agent.py
+uv run python scripts/test_natr.py
 ```
 
-## ⚙️ 配置 API Keys
+## 本地验证建议
 
-### 选项 1: 使用 .env 文件 (推荐)
+先跑低风险检查，再跑会触达交易账户的脚本：
 
-在 `backend/.env` 文件中设置:
-```
-OPENAI_API_KEY=你的OpenAI_API密钥
-HYPERLIQUID_WALLET_ADDRESS=你的Hyperliquid测试网主账户地址
-HYPERLIQUID_PRIVATE_KEY=已授权的API-Wallet私钥
-```
+1. `../contracts/api.md` 里的只读接口
+2. `scripts/test_natr.py`
+3. `scripts/test_simple_agent.py`
+4. `scripts/hyperliquid_acceptance.py`
+5. `scripts/test_futures_trading.py`
 
-### 选项 2: 直接在脚本中设置
+## 注意
 
-编辑相应的脚本文件，找到包含 `os.environ["OPENAI_API_KEY"]` 的行并替换为你的 API 密钥。
-
-## 🧪 测试内容
-
-### OpenAI 测试 (`test_openai.py`)
-- ✅ OpenAI GPT-4 连接测试
-- ✅ 基本交易决策生成测试
-- ✅ 多种市场场景测试
-- ✅ 工作流程集成测试
-
-### Agent 测试 (`test_agent.py`)
-- ✅ 完整 LangGraph 工作流程测试
-- ✅ 数据库操作测试
-- ✅ 决策保存功能测试
-- ✅ 多场景决策测试
-- ✅ 数据库统计显示
-
-## 📊 测试结果
-
-成功的测试会显示:
-- ✅ OpenAI 连接正常
-- 🤖 AI 生成的交易决策
-- 💾 数据库中的决策记录
-- 📈 决策统计信息
-
-## 🔍 故障排除
-
-如果遇到问题:
-1. 检查 API Keys 是否正确设置
-2. 确认网络连接正常
-3. 查看错误日志信息
-4. 确保 `data/` 目录有写入权限
+- 这里的脚本说明只面向当前本地运行时，不再把 Binance 或 `BTCUSDT` 视为规范输入。
+- 仓位、订单、成交等历史数据里如果出现旧格式字符串，应视为兼容/遗留数据，而不是新的本地验证标准。
