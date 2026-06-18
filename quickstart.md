@@ -13,7 +13,7 @@
 ### 1. Clone Repository
 ```bash
 git clone <repository-url>
-cd AlphaTransformer
+cd opennof1
 ```
 
 ### 2. Install System Dependencies
@@ -96,16 +96,17 @@ Edit `backend/config/agent.yaml` to customize:
 Example:
 ```yaml
 agent:
-  model_name: "gpt-4o"  # or "deepseek-chat", "claude-3-5-sonnet"
-  base_url: null  # or "https://api.deepseek.com/v1" for DeepSeek
-  api_key: "${OPENAI_API_KEY}"  # or "${DEEPSEEK_API_KEY}"
+  model_name: "deepseek-chat"  # or "gpt-4o", "claude-3-5-sonnet"
+  base_url: "https://api.deepseek.com/v1"  # or null for OpenAI-compatible defaults
+  api_key: "${OPENAI_API_KEY}"
   decision_interval: 180
   symbols:
     - BTC
     - ETH
+    - SOL
 
 default_risk:
-  max_position_size_percent: 0.1
+  max_position_size_percent: 0.2
   max_daily_loss_percent: 0.05
 ```
 
@@ -120,14 +121,18 @@ default_risk:
 ### 2. Start the Trading Agent
 ```bash
 cd backend
-uv run python main.py
+uv run python -m api.main
 ```
 
-The agent will:
-1. Connect to market data feeds
-2. Start making trading decisions every 60 seconds
-3. Execute trades through Hyperliquid testnet
-4. Log all decisions and executions
+Backend startup will:
+1. Initialize SQLite and historical services
+2. Start Hyperliquid market-data polling
+3. Expose API routes at `http://127.0.0.1:8000`
+
+Important:
+- The backend does **not** auto-start the AI scheduler.
+- Automatic trading begins only after `POST /api/v1/agent/start` or the frontend control action.
+- Default decision interval is `180` seconds, not 60 seconds.
 
 ### 3. Start Frontend Dashboard
 ```bash
@@ -149,17 +154,23 @@ Features:
 
 ### API Endpoints
 ```bash
-# Get account data
-curl http://localhost:8000/api/account
+# Health
+curl http://127.0.0.1:8000/api/v1/health
 
-# Get P&L history
-curl http://localhost:8000/api/pnl
+# Configured symbols/timeframes
+curl http://127.0.0.1:8000/api/v1/symbols
 
-# Get position data
-curl http://localhost:8000/api/positions
+# Cache health
+curl http://127.0.0.1:8000/api/v1/cache/info
 
-# Get agent analysis
-curl http://localhost:8000/api/analysis
+# Sample K-line lookup
+curl "http://127.0.0.1:8000/api/v1/klines/BTC/3m?limit=5"
+
+# Market context used by the agent
+curl http://127.0.0.1:8000/api/v1/market/context/BTC
+
+# Agent status
+curl http://127.0.0.1:8000/api/v1/agent/status
 ```
 
 ## Configuration
@@ -191,11 +202,13 @@ Add or remove symbols from the trading list:
 ```yaml
 agent:
   symbols:
-    - BTCUSDT
-    - ETHUSDT
-    - SOLUSDT
-    - ADAUSDT
+    - BTC
+    - ETH
+    - SOL
 ```
+
+The runtime contract uses logical symbols only. Exchange-specific strings such as
+`BTC/USDC:USDC` are generated internally at the CCXT boundary.
 
 ## Safety Features
 
@@ -230,13 +243,20 @@ logging:
 
 **Agent not making decisions:**
 - Check API credentials in .env file
-- Verify OpenAI API key is valid
-- Check market data connection
+- Verify `OPENAI_API_KEY` is valid
+- Check `GET /api/v1/cache/info` and `GET /api/v1/connection/status`
+- Confirm the scheduler is running with `GET /api/v1/agent/status`
+- If it is stopped, start it with `POST /api/v1/agent/start`
 
 **Orders failing:**
 - Verify the API Wallet is authorized for the configured account
-- Check account balance
+- Check Hyperliquid testnet balance
 - Review risk limit settings
+
+**K-line route returns 404:**
+- Use configured logical symbols such as `BTC`, `ETH`, `SOL`
+- Use configured timeframes `3m`, `1h`, `4h`
+- Do not use old Binance-era examples such as `BTCUSDT` or `1m`
 
 **Database connection errors:**
 - Check DATABASE_URL in .env

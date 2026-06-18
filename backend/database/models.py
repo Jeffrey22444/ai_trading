@@ -43,7 +43,7 @@ class BalanceSnapshot(Base):
     available_balance = Column(Float, nullable=False)
     margin_balance = Column(Float, nullable=False)
     unrealized_pnl = Column(Float, nullable=False, default=0.0)
-    currency = Column(String(10), nullable=False, default="USDT")
+    currency = Column(String(10), nullable=False, default="USDC")
     created_at = Column(DateTime, nullable=False, default=func.now())
     
     def __repr__(self):
@@ -136,5 +136,4 @@ class SystemConfig(Base):
     
     def __repr__(self):
         return f"SystemConfig(key={self.key}, value={self.value})"
-
 

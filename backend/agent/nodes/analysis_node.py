@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, field_validator
 
+from agent.quant.guardrails import build_quant_guardrails
 from agent.state import AgentState
 from config.settings import config
 from services.prompt_service import get_trading_strategy
@@ -34,6 +35,9 @@ class SymbolDecision(BaseModel):
     )
     take_profit_price: Optional[float] = Field(
         description="止盈价格，仅对开仓操作有效", default=None
+    )
+    leverage: Optional[int] = Field(
+        description="杠杆倍数，仅对开仓操作有效；最终以系统量化护栏为准", default=None
     )
 
     @field_validator("position_size_usd", mode="before")
@@ -152,6 +156,9 @@ def analysis_node(tools: List):
             trader = get_trader()
             balance = await trader.get_balance()
             positions = await trader.get_positions()
+            quant_guardrails = build_quant_guardrails(
+                symbols, balance.available_balance, config
+            )
 
             # 格式化账户信息
             balance_info = f"总余额: ${balance.total_balance:.2f}, 可用余额: ${balance.available_balance:.2f}, 未实现盈亏: ${balance.unrealized_pnl:.2f}"
@@ -207,6 +214,9 @@ def analysis_node(tools: List):
 技术分析结果:
 {analysis_content}
 
+系统量化护栏（代码已计算，AI 不得改写 position_size_usd、stop_loss_price、take_profit_price、leverage）:
+{json.dumps({symbol: guardrail.to_prompt_dict() for symbol, guardrail in quant_guardrails.items()}, indent=2, ensure_ascii=False)}
+
 请为每个标的做出期货交易决策：
 - OPEN_LONG: 开多仓 (看涨时选择)
 - OPEN_SHORT: 开空仓 (看跌时选择) 
@@ -215,11 +225,12 @@ def analysis_node(tools: List):
 - HOLD: 持仓观望 (无明确信号或当前持仓合适)
 
 对于开仓操作(OPEN_LONG/OPEN_SHORT)，请指定：
-1. 期望的仓位价值(美元金额)
-2. 止损价格
-3. 止盈价格
+1. 采用系统量化护栏里的 position_size_usd，不得自行改写
+2. 采用系统量化护栏里对应方向的 stop_loss_price
+3. 采用系统量化护栏里对应方向的 take_profit_price
+4. 采用系统量化护栏里的 leverage
 
-注意：杠杆已配置为{config.exchange.default_leverage}x，无需指定。"""
+如果系统量化护栏 action_allowed=false，或 AI 判断不确定，必须 HOLD。AI 可以否决开仓改为 HOLD，但不得反向开仓，不得放大仓位。"""
 
             # 获取用户交易策略（三层优先级）
             user_trading_strategy = await get_trading_strategy()
@@ -241,7 +252,8 @@ def analysis_node(tools: List):
                             "reasoning": "string",
                             "position_size_usd": "number (仅开仓时需要)",
                             "stop_loss_price": "number (仅开仓时，可选)",
-                            "take_profit_price": "number (仅开仓时，可选)"
+                            "take_profit_price": "number (仅开仓时，可选)",
+                            "leverage": "number (仅开仓时，可选)"
                         }
                     ],
                     "overall_summary": "string"
@@ -269,15 +281,37 @@ def analysis_node(tools: List):
             # 直接使用 TradingDecision 构建状态
             symbol_decisions = {}
             for decision in trading_decision.symbol_decisions:
+                decision = _apply_quant_guardrail(decision, quant_guardrails)
                 symbol_decisions[decision.symbol] = {
                     "action": decision.action,
                     "reasoning": decision.reasoning,
                     "position_size_usd": decision.position_size_usd,
                     "stop_loss_price": decision.stop_loss_price,
                     "take_profit_price": decision.take_profit_price,
+                    "leverage": decision.leverage,
+                    "quant_guardrail": (
+                        quant_guardrails[decision.symbol].to_prompt_dict()
+                        if decision.symbol in quant_guardrails
+                        else None
+                    ),
                     "execution_result": None,
                     "execution_status": "pending",
                 }
+
+            for symbol in symbols:
+                if symbol not in symbol_decisions:
+                    guardrail = quant_guardrails.get(symbol)
+                    symbol_decisions[symbol] = {
+                        "action": "HOLD",
+                        "reasoning": "AI 未返回该标的决策，系统降级 HOLD",
+                        "position_size_usd": 0.0,
+                        "stop_loss_price": None,
+                        "take_profit_price": None,
+                        "leverage": None,
+                        "quant_guardrail": guardrail.to_prompt_dict() if guardrail else None,
+                        "execution_result": None,
+                        "execution_status": "pending",
+                    }
 
             # 更新状态
             state["symbol_decisions"] = symbol_decisions
@@ -296,3 +330,48 @@ def analysis_node(tools: List):
             return state
 
     return node
+
+
+def _apply_quant_guardrail(
+    decision: SymbolDecision, quant_guardrails: dict
+) -> SymbolDecision:
+    """Enforce deterministic v2 guardrails over LLM output."""
+    guardrail = quant_guardrails.get(decision.symbol)
+    if guardrail is None or decision.action not in {"OPEN_LONG", "OPEN_SHORT"}:
+        return decision
+
+    if not guardrail.action_allowed:
+        decision.action = "HOLD"
+        decision.reasoning = (
+            f"{decision.reasoning}\n系统量化护栏强制 HOLD: {guardrail.hold_reason}"
+        )
+        decision.position_size_usd = 0.0
+        decision.stop_loss_price = None
+        decision.take_profit_price = None
+        decision.leverage = None
+        return decision
+
+    if decision.action != guardrail.allowed_action:
+        decision.action = "HOLD"
+        decision.reasoning = (
+            f"{decision.reasoning}\nAI 开仓方向与系统评分方向不一致，系统降级 HOLD。"
+        )
+        decision.position_size_usd = 0.0
+        decision.stop_loss_price = None
+        decision.take_profit_price = None
+        decision.leverage = None
+        return decision
+
+    stop_side = (
+        guardrail.stops.long if decision.action == "OPEN_LONG" else guardrail.stops.short
+    )
+    decision.position_size_usd = guardrail.sizing.position_size_usd
+    decision.stop_loss_price = stop_side.stop_loss
+    decision.take_profit_price = stop_side.take_profit
+    decision.leverage = guardrail.sizing.leverage
+    decision.reasoning = (
+        f"{decision.reasoning}\n系统量化护栏已覆盖仓位/止损/止盈/杠杆: "
+        f"score={guardrail.score.total_score}, size=${guardrail.sizing.position_size_usd}, "
+        f"leverage={guardrail.sizing.leverage}x, stop_source={stop_side.stop_source}."
+    )
+    return decision

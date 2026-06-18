@@ -13,7 +13,7 @@
 ### 1. 克隆代码库
 ```bash
 git clone <repository-url>
-cd AlphaTransformer
+cd opennof1
 ```
 
 ### 2. 安装系统依赖
@@ -97,15 +97,16 @@ HYPERLIQUID_PRIVATE_KEY=已授权的API-Wallet私钥
 ```yaml
 agent:
   model_name: "deepseek-chat"  # 或 "gpt-4o", "claude-3-5-sonnet"
-  base_url: "https://api.deepseek.com/v1"  # 或 null (OpenAI), 自定义 URL
-  api_key: "${OPENAI_API_KEY}"  # 或 "${DEEPSEEK_API_KEY}"
+  base_url: "https://api.deepseek.com/v1"  # 或 null
+  api_key: "${OPENAI_API_KEY}"
   decision_interval: 180
   symbols:
     - BTC
     - ETH
+    - SOL
 
 default_risk:
-  max_position_size_percent: 0.1
+  max_position_size_percent: 0.2
   max_daily_loss_percent: 0.05
 ```
 
@@ -120,14 +121,18 @@ default_risk:
 ### 2. 启动交易代理
 ```bash
 cd backend
-uv run python main.py
+uv run python -m api.main
 ```
 
-代理会：
-1. 连接市场数据源
-2. 每 60 秒进行一次交易决策
-3. 通过 Hyperliquid 测试网执行交易
-4. 记录所有决策和执行过程
+后端启动后会：
+1. 初始化 SQLite 和历史服务
+2. 启动 Hyperliquid 行情轮询
+3. 在 `http://127.0.0.1:8000` 提供 API
+
+重要说明：
+- 后端启动后**不会**自动启动 AI 调度器。
+- 自动交易必须显式调用 `POST /api/v1/agent/start` 或在前端解锁控制后手动启动。
+- 默认决策间隔是 `180` 秒，不是 60 秒。
 
 ### 3. 启动前端面板
 ```bash
@@ -149,17 +154,23 @@ pnpm run dev
 
 ### API 接口
 ```bash
-# 获取账户数据
-curl http://localhost:8000/api/account
+# 健康检查
+curl http://127.0.0.1:8000/api/v1/health
 
-# 获取盈亏历史
-curl http://localhost:8000/api/pnl
+# 当前配置的标的与时间框架
+curl http://127.0.0.1:8000/api/v1/symbols
 
-# 获取持仓数据
-curl http://localhost:8000/api/positions
+# 缓存状态
+curl http://127.0.0.1:8000/api/v1/cache/info
 
-# 获取代理分析
-curl http://localhost:8000/api/analysis
+# 获取 K 线
+curl "http://127.0.0.1:8000/api/v1/klines/BTC/3m?limit=5"
+
+# 获取 AI 可见市场上下文
+curl http://127.0.0.1:8000/api/v1/market/context/BTC
+
+# 查看调度器状态
+curl http://127.0.0.1:8000/api/v1/agent/status
 ```
 
 ## 配置选项
@@ -191,11 +202,12 @@ default_risk:
 ```yaml
 agent:
   symbols:
-    - BTCUSDT
-    - ETHUSDT
-    - SOLUSDT
-    - ADAUSDT
+    - BTC
+    - ETH
+    - SOL
 ```
+
+运行时契约只使用逻辑符号。像 `BTC/USDC:USDC` 这样的交易所格式只应出现在 CCXT 边界，不应写进本地验证命令或 API 示例。
 
 ## 安全功能
 
@@ -230,13 +242,20 @@ logging:
 
 **代理不做决策:**
 - 检查 .env 文件中的 API 凭证
-- 验证 OpenAI API key 是否有效
-- 检查市场数据连接
+- 验证 `OPENAI_API_KEY` 是否有效
+- 检查 `GET /api/v1/cache/info` 和 `GET /api/v1/connection/status`
+- 检查 `GET /api/v1/agent/status`，确认调度器是否真的在运行
+- 如果未运行，调用 `POST /api/v1/agent/start`
 
 **订单执行失败:**
 - 验证 API Wallet 已授权给配置的主账户
-- 检查账户余额
+- 检查 Hyperliquid 测试网余额
 - 审查风险限制设置
+
+**K 线接口返回 404:**
+- 只使用当前配置的逻辑符号，例如 `BTC`、`ETH`、`SOL`
+- 只使用当前配置的时间框架 `3m`、`1h`、`4h`
+- 不要继续使用旧的 Binance 示例，例如 `BTCUSDT` 或 `1m`
 
 **数据库连接错误:**
 - 检查 .env 中的 DATABASE_URL

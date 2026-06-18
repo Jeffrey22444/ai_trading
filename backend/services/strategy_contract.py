@@ -48,6 +48,39 @@ OVERALL_SIGNAL_FIELDS = {
     "macd_consensus",
 }
 
+QUANT_GUARDRAIL_FIELDS = {
+    "direction_bias",
+    "total_score",
+    "long_score.total",
+    "long_score.breakdown.D1",
+    "long_score.breakdown.D2",
+    "long_score.breakdown.D3",
+    "long_score.breakdown.D4",
+    "long_score.breakdown.D5",
+    "short_score.total",
+    "short_score.breakdown.D1",
+    "short_score.breakdown.D2",
+    "short_score.breakdown.D3",
+    "short_score.breakdown.D4",
+    "short_score.breakdown.D5",
+    "stops.long.stop_loss",
+    "stops.long.take_profit",
+    "stops.long.stop_source",
+    "stops.short.stop_loss",
+    "stops.short.take_profit",
+    "stops.short.stop_source",
+    "sizing.position_size_usd",
+    "sizing.leverage",
+    "sizing.winrate",
+    "sizing.margin_used_usd",
+    "sizing.kelly_fraction",
+    "sizing.fractional_kelly",
+    "sizing.capped_fraction",
+    "action_allowed",
+    "allowed_action",
+    "hold_reason",
+}
+
 
 @dataclass
 class StrategyValidationResult:
@@ -66,6 +99,9 @@ def get_strategy_field_catalog(timeframes: list[str]) -> dict[str, Any]:
         "derivatives": sorted(f"derivatives.{field}" for field in DERIVATIVES_FIELDS),
         "overall_signals": sorted(
             f"overall_signals.{field}" for field in OVERALL_SIGNAL_FIELDS
+        ),
+        "quant_guardrail": sorted(
+            f"quant_guardrail.{field}" for field in QUANT_GUARDRAIL_FIELDS
         ),
         "placeholder_syntax": "{{timeframes.4h.atr}}",
         "notes": [
@@ -111,5 +147,9 @@ def _is_allowed_reference(reference: str, timeframes: list[str]) -> bool:
             return field_name in DERIVATIVES_FIELDS
         if scope == "overall_signals":
             return field_name in OVERALL_SIGNAL_FIELDS
+
+    if len(parts) >= 2 and parts[0] == "quant_guardrail":
+        quant_path = ".".join(parts[1:])
+        return quant_path in QUANT_GUARDRAIL_FIELDS
 
     return False

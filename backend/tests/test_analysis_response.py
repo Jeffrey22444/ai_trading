@@ -24,3 +24,28 @@ def test_hold_decision_accepts_null_optional_trade_fields():
     assert btc.action == "HOLD"
     assert btc.reasoning == "Signals conflict, wait."
     assert btc.position_size_usd == 0.0
+
+
+def test_open_decision_accepts_quant_leverage_field():
+    decision = parse_json_response(
+        """
+        {
+          "symbol_decisions": [
+            {
+              "symbol": "BTC",
+              "action": "OPEN_LONG",
+              "reasoning": "Quant guardrail allows long.",
+              "position_size_usd": 120,
+              "stop_loss_price": 95,
+              "take_profit_price": 130,
+              "leverage": 3
+            }
+          ],
+          "overall_summary": "BTC has enough quantified edge."
+        }
+        """
+    )
+
+    btc = decision.symbol_decisions[0]
+    assert btc.action == "OPEN_LONG"
+    assert btc.leverage == 3

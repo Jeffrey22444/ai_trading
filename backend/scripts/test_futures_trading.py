@@ -44,7 +44,7 @@ async def clean_existing_positions(trader):
     
     # 2. 清理挂单
     print("\n🔍 清理挂单...")
-    symbols_to_clean = ["ETHUSDT", "BTCUSDT", "SOLUSDT"]  # 测试涉及的标的
+    symbols_to_clean = ["ETH", "BTC", "SOL"]  # 运行时逻辑标的
     for symbol in symbols_to_clean:
         try:
             success = await trader.cancel_all_orders(symbol)
@@ -83,19 +83,19 @@ async def test_trading_interface():
 
         # 测试获取市场价格
         print("\n💰 测试获取市场价格...")
-        eth_price = await trader.get_market_price("ETHUSDT")
-        print(f"ETH/USDT 价格: ${eth_price}")
+        eth_price = await trader.get_market_price("ETH")
+        print(f"ETH 价格: ${eth_price}")
 
         # 测试数量格式化
         print("\n🔢 测试数量格式化...")
-        formatted_qty = trader.format_quantity("ETHUSDT", 0.00123456)
+        formatted_qty = trader.format_quantity("ETH", 0.00123456)
         print(f"格式化数量: {formatted_qty}")
 
         # 测试开多仓
         print("\n🚀 测试开多仓...")
 
-        # 计算交易数量（确保名义价值至少20 USDT）
-        eth_price = await trader.get_market_price("ETHUSDT")
+        # 计算交易数量（确保名义价值至少约20 USDC）
+        eth_price = await trader.get_market_price("ETH")
         if eth_price > 0:
             min_quantity = 25 / eth_price  # 25 USDT价值的ETH
         else:
@@ -103,7 +103,7 @@ async def test_trading_interface():
 
         print(f"ETH价格: ${eth_price}")
         print(
-            f"开仓数量: {min_quantity:.6f} ETH (约${min_quantity * eth_price:.2f} USDT名义价值，1倍杠杆)"
+            f"开仓数量: {min_quantity:.6f} ETH (约${min_quantity * eth_price:.2f} USDC名义价值，1倍杠杆)"
         )
 
         # 清理现有持仓
@@ -118,7 +118,7 @@ async def test_trading_interface():
         # print(f"止损价格: ${stop_loss_price:.2f} (-5%)")
         # print(f"止盈价格: ${take_profit_price:.2f} (+10%)")
         
-        # await trader.open_long("ETHUSDT", min_quantity, leverage=1, 
+        # await trader.open_long("ETH", min_quantity, leverage=1,
         #                       stop_loss_price=stop_loss_price, 
         #                       take_profit_price=take_profit_price)
         # print("✅ 开多仓（含止损止盈）成功")

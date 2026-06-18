@@ -17,6 +17,7 @@ if env_file.exists():
     load_dotenv(env_file)
 
 from trading import get_trader
+from trading.symbols import same_symbol
 
 
 async def debug_positions():
@@ -43,7 +44,7 @@ async def debug_positions():
             print(f"  合约数量: {contracts}")
             print(f"  持仓大小: {size}")
             
-            if symbol in ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] and contracts > 0:
+            if any(same_symbol(symbol, candidate) for candidate in ["BTC", "ETH", "SOL"]) and contracts > 0:
                 print(f"  *** 这是我们关注的有效持仓 ***")
                 print(f"  详细信息:")
                 for key, value in pos.items():
@@ -65,9 +66,9 @@ async def debug_positions():
             print(f"  盈亏: ${pos.unrealized_pnl}")
             print(f"  杠杆: {pos.leverage}x")
             
-            # 特别检查 SOLUSDT
-            if pos.symbol == 'SOLUSDT':
-                print(f"  *** SOLUSDT 持仓详情 ***")
+            # 特别检查 SOL
+            if same_symbol(pos.symbol, "SOL"):
+                print(f"  *** SOL 持仓详情 ***")
                 print(f"    方向: {pos.side}")
                 print(f"    是否多头: {pos.side == 'LONG'}")
                 print(f"    大小: {pos.size}")

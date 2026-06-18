@@ -10,6 +10,8 @@ import re
 from datetime import datetime
 import pandas as pd
 
+from trading.symbols import from_exchange_symbol
+
 def connect_db():
     return sqlite3.connect("data/trading.db")
 
@@ -148,7 +150,8 @@ def get_order_outcomes():
         analysis_id, symbol, side, amount, avg_price, filled_time, cost, fee, order_type = row
         orders.append({
             'analysis_id': analysis_id,
-            'symbol': symbol.replace('/USDT:USDT', 'USDT'), # Normalize symbol format
+            # Normalize legacy exchange-formatted symbols for historical analysis only.
+            'symbol': from_exchange_symbol(symbol),
             'side': side,
             'amount': amount,
             'average_price': avg_price,

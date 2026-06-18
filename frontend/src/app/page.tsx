@@ -13,6 +13,18 @@ import Header from '@/components/Header';
 
 const DECISIONS_PAGE_SIZE = 20;
 
+const DEFAULT_STATS: TradeStats = {
+  totalTrades: 0,
+  totalVolume: 0,
+  totalPnl: 0,
+  totalPnlPercent: 0,
+  winRate: 0,
+  profitLossRatio: 0,
+  expectancy: 0,
+  avgTradeSize: 0,
+  activePositions: 0,
+};
+
 export default function TradingDashboard() {
   const [accountData, setAccountData] = useState<AccountValue[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
@@ -27,27 +39,30 @@ export default function TradingDashboard() {
       if (isInitial) {
         setLoading(true);
       }
-
-
-      const [accountDataResult, decisionsResult, positionsResult, statsResult] = await Promise.all([
+      const [accountDataResult, decisionsResult, positionsResult, statsResult] = await Promise.allSettled([
         fetchAccountData({ includeAll: true }),
         fetchDecisions({ limit: DECISIONS_PAGE_SIZE, offset: 0 }),
         fetchPositions(),
         fetchStats()
       ]);
 
-      setAccountData(accountDataResult);
-      setPositions(positionsResult);
-      setStats(statsResult);
+      const nextAccountData = accountDataResult.status === 'fulfilled' ? accountDataResult.value : [];
+      const nextDecisions = decisionsResult.status === 'fulfilled' ? decisionsResult.value : [];
+      const nextPositions = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+      const nextStats = statsResult.status === 'fulfilled' ? statsResult.value : DEFAULT_STATS;
+
+      setAccountData(nextAccountData);
+      setPositions(nextPositions);
+      setStats(nextStats);
 
       setDecisions((prev) => {
         if (isInitial || prev.length === 0) {
-          setHasMoreDecisions(decisionsResult.length === DECISIONS_PAGE_SIZE);
-          return decisionsResult;
+          setHasMoreDecisions(nextDecisions.length === DECISIONS_PAGE_SIZE);
+          return nextDecisions;
         }
 
-        const latestIds = new Set(decisionsResult.map((decision) => decision.id));
-        return decisionsResult.concat(
+        const latestIds = new Set(nextDecisions.map((decision) => decision.id));
+        return nextDecisions.concat(
           prev.filter((decision) => !latestIds.has(decision.id))
         );
       });
@@ -55,17 +70,7 @@ export default function TradingDashboard() {
       console.error('Error loading dashboard data:', error);
 
       if (isInitial) {
-        setStats({
-          totalTrades: 0,
-          totalVolume: 0,
-          totalPnl: 0,
-          totalPnlPercent: 0,
-          winRate: 0,
-          profitLossRatio: 0,
-          expectancy: 0,
-          avgTradeSize: 0,
-          activePositions: 0,
-        });
+        setStats(DEFAULT_STATS);
       }
     } finally {
       if (isInitial) {

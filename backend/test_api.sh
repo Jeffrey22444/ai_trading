@@ -56,20 +56,22 @@ test_endpoint "/" "根接口"
 test_endpoint "/api/v1/health" "健康检查"
 test_endpoint "/api/v1/config" "系统配置"
 test_endpoint "/api/v1/config/validate" "配置验证"
-test_endpoint "/api/v1/symbols" "交易对列表"
+test_endpoint "/api/v1/symbols" "逻辑标的与时间框架"
 
 echo "📊 数据接口测试"
 echo
 
-test_endpoint "/api/v1/klines/BTCUSDT/1m?limit=5" "BTCUSDT 1分钟K线"
-test_endpoint "/api/v1/klines/ETHUSDT/5m?limit=5" "ETHUSDT 5分钟K线"
-test_endpoint "/api/v1/snapshot/BTCUSDT" "BTCUSDT快照"
+test_endpoint "/api/v1/klines/BTC/3m?limit=5" "BTC 3分钟K线"
+test_endpoint "/api/v1/klines/ETH/1h?limit=5" "ETH 1小时K线"
+test_endpoint "/api/v1/snapshot/BTC" "BTC 快照"
 test_endpoint "/api/v1/cache/info" "缓存信息"
+test_endpoint "/api/v1/market/context/BTC" "BTC 市场上下文"
 
 echo "🔌 连接状态测试"
 echo
 
 test_endpoint "/api/v1/connection/status" "Hyperliquid行情连接状态"
+test_endpoint "/api/v1/agent/status" "Agent调度器状态"
 
 echo "📚 API文档"
 echo "访问: $BASE_URL/docs"
