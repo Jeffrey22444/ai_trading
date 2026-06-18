@@ -1,7 +1,8 @@
 """
-提示词管理服务 - 三层优先级：数据库 > 配置文件 > 代码默认
+提示词管理服务 - 数据库为运行时策略源，文件模板用于初始化和重置
 """
 import logging
+from pathlib import Path
 from typing import Optional
 from sqlalchemy import select
 from database.database import get_session_maker
@@ -15,21 +16,91 @@ from services.strategy_contract import (
 
 logger = logging.getLogger("AlphaTransformer")
 
-# 代码默认的交易策略
-DEFAULT_TRADING_STRATEGY = """1. 单一币种仓位上限为可用余额的 20%
-2. 止损止盈 - 可以用小时级 NATR 为单位，盈亏比 2:1
-
-原则:
-1. 不要随意建仓，除非所有指标都指向一个方向，否则不要轻易下单
-2. 不要随意主动平仓，因为已经设置了止盈止损了 - 除非有强烈的信号指示趋势已经反转，才需要平仓"""
+TRADING_STRATEGY_KEY = "trading_strategy"
+DEFAULT_TEMPLATE_PATH = "backend/config/trading_strategy.md"
 
 # 缓存配置
 _strategy_cache: Optional[str] = None
 _cache_valid = False
 
+
+def get_trading_strategy_template_path() -> Path:
+    """Return the repository-local strategy template path."""
+    configured_path = (
+        getattr(config.agent, "trading_strategy_template_path", None)
+        or DEFAULT_TEMPLATE_PATH
+    )
+    path = Path(configured_path)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[2] / path
+    return path
+
+
+def get_trading_strategy_template() -> str:
+    """Load the versioned default strategy template."""
+    path = get_trading_strategy_template_path()
+    if not path.exists():
+        raise FileNotFoundError(f"交易策略模板不存在: {path}")
+    strategy = path.read_text(encoding="utf-8").strip()
+    if not strategy:
+        raise ValueError(f"交易策略模板为空: {path}")
+    return strategy
+
+
+async def _get_strategy_row(session):
+    result = await session.execute(
+        select(SystemConfig).where(SystemConfig.key == TRADING_STRATEGY_KEY)
+    )
+    return result.scalar_one_or_none()
+
+
+async def seed_trading_strategy_from_template() -> str:
+    """Ensure the database has the runtime strategy, seeded from the template."""
+    strategy = get_trading_strategy_template()
+    async with get_session_maker()() as session:
+        config_row = await _get_strategy_row(session)
+        if config_row and config_row.value.strip():
+            return config_row.value.strip()
+
+        if config_row:
+            config_row.value = strategy
+            config_row.description = "Runtime trading strategy seeded from template"
+        else:
+            session.add(
+                SystemConfig(
+                    key=TRADING_STRATEGY_KEY,
+                    value=strategy,
+                    description="Runtime trading strategy seeded from template",
+                )
+            )
+        await session.commit()
+    return strategy
+
+
+async def reset_trading_strategy_to_template() -> str:
+    """Replace the runtime database strategy with the versioned template."""
+    strategy = get_trading_strategy_template()
+    async with get_session_maker()() as session:
+        config_row = await _get_strategy_row(session)
+        if config_row:
+            config_row.value = strategy
+            config_row.description = "Runtime trading strategy reset from template"
+        else:
+            session.add(
+                SystemConfig(
+                    key=TRADING_STRATEGY_KEY,
+                    value=strategy,
+                    description="Runtime trading strategy reset from template",
+                )
+            )
+        await session.commit()
+
+    clear_strategy_cache()
+    return strategy
+
 async def get_trading_strategy() -> str:
     """
-    获取交易策略配置，按优先级：数据库 > 配置文件 > 代码默认
+    获取运行时交易策略。数据库是唯一生效来源，缺失时用模板初始化。
     """
     global _strategy_cache, _cache_valid
     
@@ -38,36 +109,20 @@ async def get_trading_strategy() -> str:
         return _strategy_cache
     
     try:
-        # 1. 优先级最高：检查数据库
         async with get_session_maker()() as session:
-            result = await session.execute(
-                select(SystemConfig).where(SystemConfig.key == "trading_strategy")
-            )
-            config_row = result.scalar_one_or_none()
+            config_row = await _get_strategy_row(session)
             
             if config_row and config_row.value.strip():
-                logger.info("使用数据库中的交易策略配置")
+                logger.info("使用数据库中的运行时交易策略")
                 _strategy_cache = config_row.value.strip()
                 _cache_valid = True
                 return _strategy_cache
     
     except Exception as e:
-        logger.warning(f"读取数据库交易策略失败: {e}")
+        logger.warning(f"读取数据库交易策略失败，将尝试模板初始化: {e}")
     
-    # 2. 次优先级：检查配置文件
-    try:
-        config_strategy = getattr(config.agent, 'trading_strategy', None)
-        if config_strategy and config_strategy.strip():
-            logger.info("使用配置文件中的交易策略配置")
-            _strategy_cache = config_strategy.strip()
-            _cache_valid = True
-            return _strategy_cache
-    except Exception as e:
-        logger.warning(f"读取配置文件交易策略失败: {e}")
-    
-    # 3. 最低优先级：使用代码默认
-    logger.info("使用代码默认的交易策略配置")
-    _strategy_cache = DEFAULT_TRADING_STRATEGY
+    logger.info("数据库交易策略缺失，使用模板初始化运行时策略")
+    _strategy_cache = await seed_trading_strategy_from_template()
     _cache_valid = True
     return _strategy_cache
 
@@ -86,7 +141,7 @@ async def set_trading_strategy(strategy: str) -> bool:
         async with get_session_maker()() as session:
             # 查找现有配置
             result = await session.execute(
-                select(SystemConfig).where(SystemConfig.key == "trading_strategy")
+                select(SystemConfig).where(SystemConfig.key == TRADING_STRATEGY_KEY)
             )
             config_row = result.scalar_one_or_none()
             
@@ -99,7 +154,7 @@ async def set_trading_strategy(strategy: str) -> bool:
                 new_config = SystemConfig(
                     key="trading_strategy",
                     value=strategy,
-                    description="用户自定义的交易策略配置"
+                    description="用户自定义的运行时交易策略配置"
                 )
                 session.add(new_config)
                 logger.info("创建新的交易策略配置")

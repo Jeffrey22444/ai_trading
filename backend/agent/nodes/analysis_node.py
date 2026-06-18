@@ -15,7 +15,7 @@ from agent.quant.guardrails import build_quant_guardrails
 from agent.state import AgentState
 from config.settings import config
 from services.prompt_service import get_trading_strategy
-from trading.symbols import from_exchange_symbol
+from trading.symbols import from_exchange_symbol, same_symbol
 
 
 class SymbolDecision(BaseModel):
@@ -230,7 +230,8 @@ def analysis_node(tools: List):
 3. 采用系统量化护栏里对应方向的 take_profit_price
 4. 采用系统量化护栏里的 leverage
 
-如果系统量化护栏 action_allowed=false，或 AI 判断不确定，必须 HOLD。AI 可以否决开仓改为 HOLD，但不得反向开仓，不得放大仓位。"""
+如果准备开仓且系统量化护栏 action_allowed=false，必须 HOLD。该限制只约束 OPEN_LONG/OPEN_SHORT，不约束 CLOSE_LONG/CLOSE_SHORT。
+已有持仓失效、风控恶化或策略要求退出时，AI 仍可输出平仓动作。AI 可以否决开仓改为 HOLD，但不得反向开仓，不得放大仓位。AI 判断不确定时必须 HOLD。"""
 
             # 获取用户交易策略（三层优先级）
             user_trading_strategy = await get_trading_strategy()
@@ -278,10 +279,16 @@ def analysis_node(tools: List):
 
             logger.info(f"trading decision: {trading_decision}")
 
+            positions_by_symbol = _positions_by_symbol(positions)
+
             # 直接使用 TradingDecision 构建状态
             symbol_decisions = {}
             for decision in trading_decision.symbol_decisions:
-                decision = _apply_quant_guardrail(decision, quant_guardrails)
+                decision = _apply_quant_guardrail(
+                    decision,
+                    quant_guardrails,
+                    positions_by_symbol.get(decision.symbol),
+                )
                 symbol_decisions[decision.symbol] = {
                     "action": decision.action,
                     "reasoning": decision.reasoning,
@@ -301,13 +308,23 @@ def analysis_node(tools: List):
             for symbol in symbols:
                 if symbol not in symbol_decisions:
                     guardrail = quant_guardrails.get(symbol)
+                    fallback_decision = SymbolDecision(
+                        symbol=symbol,
+                        action="HOLD",
+                        reasoning="AI 未返回该标的决策，系统降级 HOLD",
+                    )
+                    fallback_decision = _apply_quant_guardrail(
+                        fallback_decision,
+                        quant_guardrails,
+                        positions_by_symbol.get(symbol),
+                    )
                     symbol_decisions[symbol] = {
-                        "action": "HOLD",
-                        "reasoning": "AI 未返回该标的决策，系统降级 HOLD",
-                        "position_size_usd": 0.0,
-                        "stop_loss_price": None,
-                        "take_profit_price": None,
-                        "leverage": None,
+                        "action": fallback_decision.action,
+                        "reasoning": fallback_decision.reasoning,
+                        "position_size_usd": fallback_decision.position_size_usd,
+                        "stop_loss_price": fallback_decision.stop_loss_price,
+                        "take_profit_price": fallback_decision.take_profit_price,
+                        "leverage": fallback_decision.leverage,
                         "quant_guardrail": guardrail.to_prompt_dict() if guardrail else None,
                         "execution_result": None,
                         "execution_status": "pending",
@@ -333,45 +350,99 @@ def analysis_node(tools: List):
 
 
 def _apply_quant_guardrail(
-    decision: SymbolDecision, quant_guardrails: dict
+    decision: SymbolDecision, quant_guardrails: dict, current_position=None
 ) -> SymbolDecision:
     """Enforce deterministic v2 guardrails over LLM output."""
     guardrail = quant_guardrails.get(decision.symbol)
-    if guardrail is None or decision.action not in {"OPEN_LONG", "OPEN_SHORT"}:
+    if guardrail is None:
         return decision
 
-    if not guardrail.action_allowed:
-        decision.action = "HOLD"
-        decision.reasoning = (
-            f"{decision.reasoning}\n系统量化护栏强制 HOLD: {guardrail.hold_reason}"
+    if decision.action in {"OPEN_LONG", "OPEN_SHORT"}:
+        if not guardrail.action_allowed:
+            decision.action = "HOLD"
+            decision.reasoning = (
+                f"{decision.reasoning}\n系统量化护栏强制 HOLD: {guardrail.hold_reason}"
+            )
+            decision.position_size_usd = 0.0
+            decision.stop_loss_price = None
+            decision.take_profit_price = None
+            decision.leverage = None
+            return _apply_position_exit_guardrail(decision, guardrail, current_position)
+
+        if decision.action != guardrail.allowed_action:
+            decision.action = "HOLD"
+            decision.reasoning = (
+                f"{decision.reasoning}\nAI 开仓方向与系统评分方向不一致，系统降级 HOLD。"
+            )
+            decision.position_size_usd = 0.0
+            decision.stop_loss_price = None
+            decision.take_profit_price = None
+            decision.leverage = None
+            return _apply_position_exit_guardrail(decision, guardrail, current_position)
+
+        stop_side = (
+            guardrail.stops.long
+            if decision.action == "OPEN_LONG"
+            else guardrail.stops.short
         )
-        decision.position_size_usd = 0.0
-        decision.stop_loss_price = None
-        decision.take_profit_price = None
-        decision.leverage = None
-        return decision
-
-    if decision.action != guardrail.allowed_action:
-        decision.action = "HOLD"
+        decision.position_size_usd = guardrail.sizing.position_size_usd
+        decision.stop_loss_price = stop_side.stop_loss
+        decision.take_profit_price = stop_side.take_profit
+        decision.leverage = guardrail.sizing.leverage
         decision.reasoning = (
-            f"{decision.reasoning}\nAI 开仓方向与系统评分方向不一致，系统降级 HOLD。"
+            f"{decision.reasoning}\n系统量化护栏已覆盖仓位/止损/止盈/杠杆: "
+            f"score={guardrail.score.total_score}, size=${guardrail.sizing.position_size_usd}, "
+            f"leverage={guardrail.sizing.leverage}x, stop_source={stop_side.stop_source}."
         )
-        decision.position_size_usd = 0.0
-        decision.stop_loss_price = None
-        decision.take_profit_price = None
-        decision.leverage = None
+        return _apply_position_exit_guardrail(decision, guardrail, current_position)
+
+    return _apply_position_exit_guardrail(decision, guardrail, current_position)
+
+
+def _apply_position_exit_guardrail(
+    decision: SymbolDecision, guardrail, current_position
+) -> SymbolDecision:
+    """Close existing positions when quantified opposite-side evidence appears."""
+    if current_position is None or decision.action in {"CLOSE_LONG", "CLOSE_SHORT"}:
         return decision
 
-    stop_side = (
-        guardrail.stops.long if decision.action == "OPEN_LONG" else guardrail.stops.short
-    )
-    decision.position_size_usd = guardrail.sizing.position_size_usd
-    decision.stop_loss_price = stop_side.stop_loss
-    decision.take_profit_price = stop_side.take_profit
-    decision.leverage = guardrail.sizing.leverage
-    decision.reasoning = (
-        f"{decision.reasoning}\n系统量化护栏已覆盖仓位/止损/止盈/杠杆: "
-        f"score={guardrail.score.total_score}, size=${guardrail.sizing.position_size_usd}, "
-        f"leverage={guardrail.sizing.leverage}x, stop_source={stop_side.stop_source}."
-    )
+    side = str(getattr(current_position, "side", "")).upper()
+    exit_threshold = config.scoring.exit_score_threshold
+    long_score = guardrail.score.long_score.total_score
+    short_score = guardrail.score.short_score.total_score
+
+    if side == "SHORT" and long_score >= exit_threshold and long_score > short_score:
+        decision.action = "CLOSE_SHORT"
+        _clear_open_fields(decision)
+        decision.reasoning = (
+            f"{decision.reasoning}\n持仓退出护栏触发: 当前为 SHORT，"
+            f"LONG 评分 {long_score} >= 退出阈值 {exit_threshold} 且高于 SHORT 评分 {short_score}，"
+            "平掉空头。action_allowed=false 只限制新开仓，不限制平仓。"
+        )
+    elif side == "LONG" and short_score >= exit_threshold and short_score > long_score:
+        decision.action = "CLOSE_LONG"
+        _clear_open_fields(decision)
+        decision.reasoning = (
+            f"{decision.reasoning}\n持仓退出护栏触发: 当前为 LONG，"
+            f"SHORT 评分 {short_score} >= 退出阈值 {exit_threshold} 且高于 LONG 评分 {long_score}，"
+            "平掉多头。action_allowed=false 只限制新开仓，不限制平仓。"
+        )
+
     return decision
+
+
+def _clear_open_fields(decision: SymbolDecision) -> None:
+    decision.position_size_usd = 0.0
+    decision.stop_loss_price = None
+    decision.take_profit_price = None
+    decision.leverage = None
+
+
+def _positions_by_symbol(positions) -> dict[str, object]:
+    indexed = {}
+    for pos in positions:
+        for symbol in config.agent.symbols:
+            if same_symbol(pos.symbol, symbol):
+                indexed[symbol] = pos
+                break
+    return indexed

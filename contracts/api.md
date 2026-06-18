@@ -294,6 +294,14 @@ DELETE /api/v1/trading/strategy
 POST /api/v1/trading/strategy/refresh
 ```
 
+Runtime strategy text is stored in the database so the Settings page can edit it directly. `backend/config/trading_strategy.md` is the versioned template used to seed or reset the database strategy. `backend/config/agent.yaml` contains quant parameters, not the strategy body.
+
+Endpoint behavior:
+- `GET /trading/strategy`: returns the current runtime database strategy and source.
+- `POST /trading/strategy`: validates and saves the runtime database strategy.
+- `DELETE /trading/strategy`: resets the database strategy from `backend/config/trading_strategy.md`.
+- `POST /trading/strategy/refresh`: clears the in-memory cache and reloads config values.
+
 The strategy field catalog accepts explicit references to:
 - `timeframes.*`
 - `derivatives.*`

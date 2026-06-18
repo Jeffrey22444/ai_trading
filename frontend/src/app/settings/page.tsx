@@ -18,6 +18,7 @@ import Header from "@/components/Header";
 
 export default function SettingsPage() {
   const [strategy, setStrategy] = useState("");
+  const [strategySource, setStrategySource] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -52,6 +53,7 @@ export default function SettingsPage() {
       setLoading(true);
       const data = await fetchTradingStrategy();
       setStrategy(data.strategy);
+      setStrategySource(data.source ?? null);
     } catch (error) {
       setMessage({ type: "error", text: "Failed to load trading strategy" });
     } finally {
@@ -101,11 +103,12 @@ export default function SettingsPage() {
       setSaving(true);
       setMessage(null);
 
-      await updateTradingStrategy(strategy);
+      const response = await updateTradingStrategy(strategy);
+      setStrategySource(response.source ?? "database");
 
       setMessage({
         type: "success",
-        text: "Trading strategy updated successfully",
+        text: "Runtime trading strategy saved to database",
       });
     } catch (error) {
       setMessage({
@@ -125,12 +128,13 @@ export default function SettingsPage() {
       setResetting(true);
       setMessage(null);
 
-      await resetTradingStrategy();
+      const response = await resetTradingStrategy();
+      setStrategySource(response.source ?? "database");
       await loadStrategy(); // Reload to get default strategy
 
       setMessage({
         type: "success",
-        text: "Trading strategy reset to default",
+        text: "Runtime strategy reset from template",
       });
     } catch (error) {
       setMessage({
@@ -151,6 +155,7 @@ export default function SettingsPage() {
       setMessage(null);
 
       const response = await refreshTradingStrategy();
+      setStrategySource(response.source ?? null);
       await loadStrategy();
 
       setMessage({
@@ -294,8 +299,10 @@ export default function SettingsPage() {
                     Trading Strategy Rules
                   </label>
                   <p className="mb-3 text-xs text-gray-600">
-                    If you edit <code>backend/config/agent.yaml</code> while the backend is already
-                    running, use refresh to reload the file and clear the in-memory strategy cache.
+                    This editor updates the runtime database strategy. Reset restores the
+                    versioned template from <code>backend/config/trading_strategy.md</code>.
+                    Quant parameters remain in <code>backend/config/agent.yaml</code>.
+                    {strategySource ? ` Current source: ${strategySource}.` : ""}
                   </p>
                   <textarea
                     value={strategy}
@@ -338,7 +345,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <RotateCcw size={16} />
-                        <span>RESET TO DEFAULT</span>
+                        <span>RESET TO TEMPLATE</span>
                       </>
                     )}
                   </button>
@@ -356,7 +363,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <RefreshCw size={16} />
-                        <span>REFRESH ACTIVE CONFIG</span>
+                        <span>REFRESH STRATEGY CACHE</span>
                       </>
                     )}
                   </button>

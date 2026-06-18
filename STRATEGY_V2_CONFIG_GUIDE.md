@@ -6,12 +6,25 @@
 
 - 客观行情数据由后端代码抓取和计算。
 - D1-D5 评分、胜率映射、Kelly 仓位、止损止盈、杠杆档位由代码执行。
+- 已有持仓的反向退出护栏由代码执行，避免 AI 把“不能新开仓”误判成“不能平仓”。
 - AI 只能确认开仓、否决为 HOLD、判断已有持仓是否失效，并写 reasoning。
 - AI 不得改写 `position_size_usd`、`stop_loss_price`、`take_profit_price`、`leverage`。
 
-## 配置文件位置
+## 策略来源
 
-主要配置在：
+运行时自然语言策略以数据库为准，可在前端 Settings 页面直接修改。默认模板在：
+
+```text
+backend/config/trading_strategy.md
+```
+
+前端 Reset 会把数据库策略重置为这个模板。修改模板文件不会自动覆盖正在运行的数据库策略，需要在前端 Reset，或调用：
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/api/v1/trading/strategy
+```
+
+量化参数配置在：
 
 ```text
 backend/config/agent.yaml
@@ -23,7 +36,7 @@ backend/config/agent.yaml
 backend/config/agent_config.py
 ```
 
-修改 `agent.yaml` 后，如果后端已经在运行，需要刷新 active config：
+修改 `agent.yaml` 的量化参数后，如果后端已经在运行，需要刷新配置和策略 cache：
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/trading/strategy/refresh
@@ -75,6 +88,7 @@ leverage:
 ```yaml
 scoring:
   entry_score_threshold: 6.0
+  exit_score_threshold: 5.0
   min_direction_edge: 1.0
   trend_timeframes: ["1h", "4h"]
   momentum_timeframe: "4h"
@@ -96,6 +110,7 @@ scoring:
 ```
 
 - `entry_score_threshold`: 低于该分数强制 HOLD。
+- `exit_score_threshold`: 已有反向持仓的退出阈值。已有 SHORT 时，LONG 评分达到该值且高于 SHORT 评分，后端可改为 `CLOSE_SHORT`；已有 LONG 时反向同理。该参数不允许新开仓。
 - `min_direction_edge`: LONG/SHORT 分差低于该值时强制 HOLD。
 - `trend_timeframes`: D1 趋势一致性使用的时间框架。
 - `momentum_timeframe`: D2 动量优先使用的时间框架。
@@ -176,4 +191,3 @@ CI=true pnpm run build
 backend/agent/quant/
 backend/tests/test_quant_guardrails.py
 ```
-

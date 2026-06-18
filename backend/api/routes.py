@@ -21,6 +21,7 @@ from trading.position_service import get_position_service
 from services.prompt_service import (
     get_trading_strategy,
     get_trading_strategy_field_catalog,
+    reset_trading_strategy_to_template,
     set_trading_strategy,
     validate_trading_strategy,
 )
@@ -794,7 +795,6 @@ async def _resolve_trading_strategy_source() -> str:
     from database.models import SystemConfig
     from sqlalchemy import select
 
-    source = "default"
     try:
         async with get_session_maker()() as session:
             result = await session.execute(
@@ -803,14 +803,11 @@ async def _resolve_trading_strategy_source() -> str:
             config_row = result.scalar_one_or_none()
 
             if config_row and config_row.value.strip():
-                source = "database"
-            elif hasattr(config.agent, "trading_strategy") and config.agent.trading_strategy:
-                source = "config"
+                return "database"
     except Exception:
-        if hasattr(config.agent, "trading_strategy") and config.agent.trading_strategy:
-            source = "config"
+        logger.warning("无法解析数据库策略来源，将报告 template")
 
-    return source
+    return "template"
 
 
 def _build_strategy_validation_response(strategy: str) -> StrategyValidationResponse:
@@ -895,30 +892,16 @@ async def update_trading_strategy(request: TradingStrategyRequest):
 
 @router.delete("/trading/strategy", response_model=TradingStrategyUpdateResponse)
 async def reset_trading_strategy():
-    """重置交易策略为默认值（删除数据库中的自定义配置）"""
+    """重置交易策略为仓库模板，并写回数据库运行时策略。"""
     try:
-        from database.database import get_session_maker
-        from database.models import SystemConfig
-        from sqlalchemy import delete
-        
-        async with get_session_maker()() as session:
-            # 删除数据库中的自定义配置
-            await session.execute(
-                delete(SystemConfig).where(SystemConfig.key == "trading_strategy")
-            )
-            await session.commit()
-        
-        # 清除缓存
-        from services.prompt_service import clear_strategy_cache
-        clear_strategy_cache()
-        
-        logger.info("交易策略已重置为默认值")
-        strategy = await get_trading_strategy()
+        strategy = await reset_trading_strategy_to_template()
+
+        logger.info("交易策略已重置为模板并写入数据库")
         return TradingStrategyUpdateResponse(
             success=True,
-            message="交易策略已重置为默认值",
+            message="交易策略已重置为模板",
             timestamp=datetime.now(),
-            source=await _resolve_trading_strategy_source(),
+            source="database",
             validation=_build_strategy_validation_response(strategy),
         )
         
@@ -929,7 +912,7 @@ async def reset_trading_strategy():
 
 @router.post("/trading/strategy/refresh", response_model=TradingStrategyUpdateResponse)
 async def refresh_trading_strategy():
-    """Reload config/agent.yaml and clear the in-memory strategy cache."""
+    """Reload config values and clear the in-memory runtime-strategy cache."""
     try:
         reload_config()
 
@@ -939,10 +922,10 @@ async def refresh_trading_strategy():
         strategy = await get_trading_strategy()
         source = await _resolve_trading_strategy_source()
 
-        logger.info("交易策略缓存与配置已刷新")
+        logger.info("交易策略缓存已刷新")
         return TradingStrategyUpdateResponse(
             success=True,
-            message="交易策略缓存与配置已刷新",
+            message="交易策略缓存已刷新",
             timestamp=datetime.now(),
             source=source,
             validation=_build_strategy_validation_response(strategy),

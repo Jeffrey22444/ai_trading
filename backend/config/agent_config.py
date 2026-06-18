@@ -59,7 +59,7 @@ class AgentConfig(BaseModel):
     decision_interval: int
     symbols: list[str]
     timeframes: list[str]
-    trading_strategy: Optional[str] = None  # User-configurable trading strategy
+    trading_strategy_template_path: Optional[str] = None
 
 
 class ExchangeConfig(BaseModel):
@@ -136,6 +136,7 @@ class LeverageConfig(BaseModel):
 
 class ScoringConfig(BaseModel):
     entry_score_threshold: float = 6.0
+    exit_score_threshold: float = 5.0
     min_direction_edge: float = 1.0
     trend_timeframes: list[str] = ["1h", "4h"]
     momentum_timeframe: str = "4h"
