@@ -1,4 +1,9 @@
-from agent.quant.models import DirectionScore, IndicatorFrame, ScoreResult, SymbolMarketContext
+from agent.quant.models import (
+    DirectionScore,
+    IndicatorFrame,
+    ScoreResult,
+    SymbolMarketContext,
+)
 from agent.quant.position_sizing import calculate_position_size
 from agent.quant.scoring import score_symbol
 from agent.quant.stops import calculate_stops
@@ -9,8 +14,12 @@ def _score_result(total=8.0, direction="LONG"):
     return ScoreResult(
         direction_bias=direction,
         total_score=total,
-        long_score=DirectionScore(direction="LONG", total_score=total, breakdown={}, notes=[]),
-        short_score=DirectionScore(direction="SHORT", total_score=3.0, breakdown={}, notes=[]),
+        long_score=DirectionScore(
+            direction="LONG", total_score=total, breakdown={}, notes=[]
+        ),
+        short_score=DirectionScore(
+            direction="SHORT", total_score=3.0, breakdown={}, notes=[]
+        ),
         notes=[],
     )
 
@@ -35,8 +44,50 @@ def _frame(
         rsi14=rsi,
         atr=atr,
         natr=natr,
-        highs=[100, 103, 108, 112, 116, 121, 124, 122, 125, 126, 123, 122, 121, 120, 119, 121, 122, 123, 124, 125],
-        lows=[90, 94, 98, 101, 105, 109, 112, 110, 111, 113, 112, 109, 110, 111, 112, 113, 114, 115, 116, 117],
+        highs=[
+            100,
+            103,
+            108,
+            112,
+            116,
+            121,
+            124,
+            122,
+            125,
+            126,
+            123,
+            122,
+            121,
+            120,
+            119,
+            121,
+            122,
+            123,
+            124,
+            125,
+        ],
+        lows=[
+            90,
+            94,
+            98,
+            101,
+            105,
+            109,
+            112,
+            110,
+            111,
+            113,
+            112,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+        ],
         closes=[100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 119, 120],
     )
 
@@ -80,7 +131,7 @@ def test_kelly_position_sizing_opens_when_calculated_size_meets_minimum():
     assert result.leverage == 3
 
 
-def test_core_symbols_are_not_hard_rejected_by_opposite_btc_direction():
+def test_core_symbol_d5_scores_own_trend_without_btc_hard_veto():
     eth_context = _context("ETH")
     btc_bearish_frame = _frame(
         price=80.0,
@@ -93,8 +144,36 @@ def test_core_symbols_are_not_hard_rejected_by_opposite_btc_direction():
 
     result = score_symbol(eth_context, btc_context, ScoringConfig())
 
-    assert result.long_score.breakdown["D5"] >= 1
+    assert result.long_score.breakdown["D5"] == 2
+    assert result.short_score.breakdown["D5"] == 0
     assert result.direction_bias == "LONG"
+
+
+def test_core_symbol_d5_can_be_zero_when_own_trend_does_not_support_direction():
+    neutral_frame = _frame(price=105.0, ema20=110.0, ema50=100.0)
+    eth_context = _context("ETH", frame=neutral_frame)
+    btc_bearish_context = _context(
+        "BTC",
+        frame=_frame(price=80.0, ema20=90.0, ema50=100.0),
+    )
+
+    result = score_symbol(eth_context, btc_bearish_context, ScoringConfig())
+
+    assert result.long_score.breakdown["D5"] == 0
+    assert result.short_score.breakdown["D5"] == 0
+
+
+def test_non_core_symbol_still_uses_benchmark_context_for_d5():
+    doge_context = _context("DOGE")
+    btc_bearish_context = _context(
+        "BTC",
+        frame=_frame(price=80.0, ema20=90.0, ema50=100.0),
+    )
+
+    result = score_symbol(doge_context, btc_bearish_context, ScoringConfig())
+
+    assert result.long_score.breakdown["D5"] == 0
+    assert result.short_score.breakdown["D5"] == 2
 
 
 def test_objective_stops_are_directionally_valid_and_two_to_one():

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatBeijingCycleTimestamp } from '@/lib/time';
 import type { DecisionsListProps, TradeAction } from '@/lib/types';
 
 const DecisionsList: React.FC<DecisionsListProps> = ({
@@ -122,17 +123,6 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
     }
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
-
   return (
     <div className="h-full flex flex-col">
       <ScrollArea ref={scrollAreaRef} className="flex-1">
@@ -146,7 +136,7 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
                     {decision.sequence ? `Cycle #${decision.sequence}` : `Cycle #${decisions.length - index}`}
                   </span>
                   <div className="text-gray-400 text-xs font-mono">
-                    {formatTimestamp(decision.timestamp)}
+                    {formatBeijingCycleTimestamp(decision.timestamp)}
                   </div>
                 </div>
 

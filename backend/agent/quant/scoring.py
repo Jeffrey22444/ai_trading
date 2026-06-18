@@ -140,9 +140,7 @@ def _score_derivatives(
     if current_oi is None or previous_oi is None or not frame:
         return 1
 
-    price_delta = (
-        frame.closes[-1] - frame.closes[-2] if len(frame.closes) >= 2 else 0.0
-    )
+    price_delta = frame.closes[-1] - frame.closes[-2] if len(frame.closes) >= 2 else 0.0
     oi_delta = current_oi - previous_oi
     price_same_direction = price_delta > 0 if direction == "LONG" else price_delta < 0
     funding_ok = (
@@ -166,7 +164,7 @@ def _score_benchmark_context(
     # BTC/ETH/SOL are treated as core markets. BTC context is a risk backdrop,
     # not a hard altcoin-style veto for ETH/SOL.
     if context.symbol in scoring_config.core_symbols:
-        return max(_score_configured_trend(context, direction, scoring_config), 1)
+        return _score_configured_trend(context, direction, scoring_config)
     if not benchmark_context:
         return 1
     benchmark_direction = _simple_configured_direction(
@@ -179,9 +177,7 @@ def _score_benchmark_context(
     return 0
 
 
-def _simple_configured_direction(
-    context: SymbolMarketContext, scoring_config
-) -> str:
+def _simple_configured_direction(context: SymbolMarketContext, scoring_config) -> str:
     long_trend = _score_configured_trend(context, "LONG", scoring_config)
     short_trend = _score_configured_trend(context, "SHORT", scoring_config)
     if long_trend > short_trend:
