@@ -145,7 +145,9 @@ class EntryQualityConfig(BaseModel):
     min_rsi_short: float = 30.0
     max_price_ema20_distance_atr: float = 1.2
     require_momentum_not_decaying: bool = True
-    max_market_data_age_seconds: int = 120
+    use_timeframe_aware_freshness: bool = True
+    market_data_age_buffer_seconds: int = 75
+    max_market_data_age_seconds: int = 300
 
 
 class ScoringConfig(BaseModel):

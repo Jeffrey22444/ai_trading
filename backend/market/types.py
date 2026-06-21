@@ -24,11 +24,23 @@ class Kline:
     taker_buy_base_volume: Decimal
     taker_buy_quote_volume: Decimal
     is_final: bool = False
+
+    @property
+    def open_timestamp(self) -> datetime:
+        """Return the candle open timestamp."""
+        return datetime.fromtimestamp(self.open_time / 1000)
+
+    @property
+    def close_timestamp(self) -> datetime:
+        """Return the candle close timestamp, falling back to open time if invalid."""
+        if self.close_time and self.close_time > 0:
+            return datetime.fromtimestamp(self.close_time / 1000)
+        return self.open_timestamp
     
     @property
     def timestamp(self) -> datetime:
-        """Return timestamp"""
-        return datetime.fromtimestamp(self.open_time / 1000)
+        """Legacy timestamp: candle open time. Prefer open_timestamp/close_timestamp."""
+        return self.open_timestamp
 
 
 @dataclass

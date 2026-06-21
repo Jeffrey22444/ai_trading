@@ -22,6 +22,8 @@ class IndicatorFrame:
     lows: list[float] = field(default_factory=list)
     closes: list[float] = field(default_factory=list)
     timestamp: datetime | None = None
+    open_timestamp: datetime | None = None
+    close_timestamp: datetime | None = None
 
 
 @dataclass(frozen=True)

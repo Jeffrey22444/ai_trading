@@ -28,6 +28,14 @@ def make_kline(symbol: str = "BTC", interval: str = "3m") -> Kline:
     )
 
 
+def test_kline_exposes_open_and_close_timestamps_while_preserving_legacy_timestamp():
+    kline = make_kline()
+
+    assert kline.open_timestamp == datetime.fromtimestamp(kline.open_time / 1000)
+    assert kline.close_timestamp == datetime.fromtimestamp(kline.close_time / 1000)
+    assert kline.timestamp == kline.open_timestamp
+
+
 @pytest.mark.asyncio
 async def test_sync_snapshot_can_read_cache_while_async_loop_is_running():
     cache = KlineCache()

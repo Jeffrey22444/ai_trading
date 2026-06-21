@@ -30,6 +30,7 @@ def evaluate_entry_quality(
         "reference_timestamp": frame.timestamp.isoformat() if frame.timestamp else None,
         "direction": direction,
     }
+    freshness_timestamp, timestamp_source = _freshness_timestamp(frame)
 
     missing = [
         name
@@ -40,7 +41,7 @@ def evaluate_entry_quality(
             "atr": frame.atr,
             "macd_histogram": frame.macd_histogram,
             "previous_macd_histogram": frame.previous_macd_histogram,
-            "timestamp": frame.timestamp,
+            "timestamp": freshness_timestamp,
         }.items()
         if value is None
     ]
@@ -48,9 +49,12 @@ def evaluate_entry_quality(
         checks["missing_fields"] = missing
         return _hold(f"入场质量字段缺失: {', '.join(missing)}", checks)
 
-    age_seconds = _age_seconds(frame.timestamp)
+    allowed_age_seconds = _allowed_age_seconds(timeframe, config)
+    age_seconds = _age_seconds(freshness_timestamp)
     checks["market_data_age_seconds"] = age_seconds
-    if age_seconds > config.entry_quality.max_market_data_age_seconds:
+    checks["market_data_allowed_age_seconds"] = allowed_age_seconds
+    checks["timestamp_source"] = timestamp_source
+    if age_seconds > allowed_age_seconds:
         return _hold("参考行情数据过期，强制 HOLD", checks)
 
     if frame.atr <= 0:
@@ -95,6 +99,38 @@ def evaluate_entry_quality(
 def _age_seconds(timestamp: datetime) -> float:
     now = datetime.now(tz=timestamp.tzinfo) if timestamp.tzinfo else datetime.now()
     return max(0.0, (now - timestamp).total_seconds())
+
+
+def _freshness_timestamp(frame) -> tuple[datetime | None, str | None]:
+    if frame.close_timestamp is not None:
+        return frame.close_timestamp, "close_timestamp"
+    if frame.timestamp is not None:
+        return frame.timestamp, "timestamp"
+    return None, None
+
+
+def _timeframe_seconds(timeframe: str) -> int:
+    if not timeframe:
+        return 0
+    unit = timeframe[-1]
+    try:
+        value = int(timeframe[:-1])
+    except ValueError:
+        return 0
+    multipliers = {
+        "m": 60,
+        "h": 60 * 60,
+        "d": 24 * 60 * 60,
+    }
+    return value * multipliers.get(unit, 0)
+
+
+def _allowed_age_seconds(timeframe: str, config) -> int:
+    if config.entry_quality.use_timeframe_aware_freshness:
+        timeframe_age = _timeframe_seconds(timeframe)
+        if timeframe_age > 0:
+            return timeframe_age + config.entry_quality.market_data_age_buffer_seconds
+    return config.entry_quality.max_market_data_age_seconds
 
 
 def _hold(reason: str, checks: dict[str, Any]) -> EntryQualityResult:

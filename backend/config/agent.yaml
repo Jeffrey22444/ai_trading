@@ -73,7 +73,9 @@ entry_quality:
   min_rsi_short: 30
   max_price_ema20_distance_atr: 1.2
   require_momentum_not_decaying: true
-  max_market_data_age_seconds: 120
+  use_timeframe_aware_freshness: true
+  market_data_age_buffer_seconds: 75
+  max_market_data_age_seconds: 300
 
 scoring:
   entry_score_threshold: 6.0

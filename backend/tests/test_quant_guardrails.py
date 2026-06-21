@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from agent.quant.guardrails import build_quant_guardrail
@@ -46,6 +46,8 @@ def _frame(
     atr=5.0,
     natr=3.0,
     timestamp=None,
+    open_timestamp=None,
+    close_timestamp=None,
 ):
     return IndicatorFrame(
         current_price=price,
@@ -102,6 +104,8 @@ def _frame(
         ],
         closes=[100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 119, 120],
         timestamp=timestamp,
+        open_timestamp=open_timestamp,
+        close_timestamp=close_timestamp,
     )
 
 
@@ -135,12 +139,16 @@ def _guardrail_context_for_frame(frame, symbol="ETH"):
 
 
 def _fresh_long_frame(**overrides):
-    values = {"timestamp": datetime.now()}
+    timestamp = datetime.now()
+    values = {"timestamp": timestamp, "close_timestamp": timestamp}
     values.update(overrides)
+    if "timestamp" in overrides and "close_timestamp" not in overrides:
+        values["close_timestamp"] = values["timestamp"]
     return _frame(**values)
 
 
 def _fresh_short_frame(**overrides):
+    timestamp = datetime.now()
     values = {
         "price": 80.0,
         "ema20": 90.0,
@@ -148,9 +156,12 @@ def _fresh_short_frame(**overrides):
         "macd": -2.0,
         "previous_macd": -1.0,
         "rsi": 45.0,
-        "timestamp": datetime.now(),
+        "timestamp": timestamp,
+        "close_timestamp": timestamp,
     }
     values.update(overrides)
+    if "timestamp" in overrides and "close_timestamp" not in overrides:
+        values["close_timestamp"] = values["timestamp"]
     return _frame(**values)
 
 
@@ -242,6 +253,9 @@ def test_safety_and_entry_quality_config_loads_from_agent_yaml():
 
     assert config.entry_quality.enabled is True
     assert config.execution_safety.max_entry_price_drift_pct == 0.003
+    assert config.entry_quality.use_timeframe_aware_freshness is True
+    assert config.entry_quality.market_data_age_buffer_seconds == 75
+    assert config.entry_quality.max_market_data_age_seconds == 300
 
 
 def test_quant_guardrail_outputs_reference_price_from_3m_first():
@@ -376,6 +390,83 @@ def test_entry_quality_blocks_when_required_fields_are_missing():
     assert guardrail.action_allowed is False
     assert "字段缺失" in guardrail.hold_reason
     assert "rsi14" in guardrail.entry_quality.checks["missing_fields"]
+
+
+def test_entry_quality_allows_3m_age_with_timeframe_buffer():
+    timestamp = datetime.now() - timedelta(seconds=190)
+    context = _guardrail_context_for_frame(
+        _fresh_long_frame(
+            price=112.0,
+            ema20=110.0,
+            timestamp=timestamp - timedelta(seconds=180),
+            close_timestamp=timestamp,
+        )
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+    checks = guardrail.entry_quality.checks
+
+    assert guardrail.entry_quality.can_enter is True
+    assert checks["reference_timeframe"] == "3m"
+    assert checks["timestamp_source"] == "close_timestamp"
+    assert checks["market_data_age_seconds"] >= 190
+    assert checks["market_data_allowed_age_seconds"] == 255
+
+
+def test_entry_quality_blocks_3m_age_beyond_timeframe_buffer():
+    timestamp = datetime.now() - timedelta(seconds=400)
+    context = _guardrail_context_for_frame(
+        _fresh_long_frame(
+            price=112.0,
+            ema20=110.0,
+            timestamp=timestamp - timedelta(seconds=180),
+            close_timestamp=timestamp,
+        )
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+    checks = guardrail.entry_quality.checks
+
+    assert guardrail.entry_quality.can_enter is False
+    assert "数据过期" in guardrail.entry_quality.hold_reason
+    assert checks["market_data_age_seconds"] >= 400
+    assert checks["market_data_allowed_age_seconds"] == 255
+    assert checks["reference_timeframe"] == "3m"
+    assert checks["timestamp_source"] == "close_timestamp"
+
+
+def test_entry_quality_uses_fixed_max_age_when_timeframe_aware_disabled():
+    timestamp = datetime.now() - timedelta(seconds=190)
+    context = _guardrail_context_for_frame(
+        _fresh_long_frame(price=112.0, ema20=110.0, close_timestamp=timestamp)
+    )
+
+    guardrail = build_quant_guardrail(
+        context,
+        None,
+        10_000.0,
+        _guardrail_config(
+            EntryQualityConfig(
+                use_timeframe_aware_freshness=False,
+                max_market_data_age_seconds=120,
+            )
+        ),
+    )
+
+    assert guardrail.entry_quality.can_enter is False
+    assert "数据过期" in guardrail.entry_quality.hold_reason
+    assert guardrail.entry_quality.checks["market_data_allowed_age_seconds"] == 120
+
+
+def test_entry_quality_blocks_when_freshness_timestamp_is_missing():
+    context = _guardrail_context_for_frame(
+        _frame(price=112.0, ema20=110.0, timestamp=None, close_timestamp=None)
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.entry_quality.can_enter is False
+    assert "timestamp" in guardrail.entry_quality.checks["missing_fields"]
 
 
 def test_quant_guardrail_prompt_dict_contains_review_fields():

@@ -31,6 +31,7 @@ def build_market_context(symbol: str, timeframes: list[str]) -> SymbolMarketCont
         ema20 = talib.EMA(closes, timeperiod=20)
         ema50 = talib.EMA(closes, timeperiod=50)
 
+        latest_kline = klines[-1]
         frames[timeframe] = IndicatorFrame(
             current_price=float(closes[-1]),
             ema20=_last_valid(ema20),
@@ -43,7 +44,9 @@ def build_market_context(symbol: str, timeframes: list[str]) -> SymbolMarketCont
             highs=[float(value) for value in highs],
             lows=[float(value) for value in lows],
             closes=[float(value) for value in closes],
-            timestamp=klines[-1].timestamp,
+            timestamp=latest_kline.close_timestamp,
+            open_timestamp=latest_kline.open_timestamp,
+            close_timestamp=latest_kline.close_timestamp,
         )
 
     current = derivatives_cache.get_snapshot(logical_symbol)
