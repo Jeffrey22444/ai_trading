@@ -134,6 +134,20 @@ class LeverageConfig(BaseModel):
     }
 
 
+class ExecutionSafetyConfig(BaseModel):
+    max_entry_price_drift_pct: float = 0.003
+    max_chase_price_drift_pct: float = 0.0015
+
+
+class EntryQualityConfig(BaseModel):
+    enabled: bool = True
+    max_rsi_long: float = 70.0
+    min_rsi_short: float = 30.0
+    max_price_ema20_distance_atr: float = 1.2
+    require_momentum_not_decaying: bool = True
+    max_market_data_age_seconds: int = 120
+
+
 class ScoringConfig(BaseModel):
     entry_score_threshold: float = 6.0
     exit_score_threshold: float = 5.0
@@ -198,6 +212,8 @@ class AppConfig(BaseModel):
     default_risk: RiskConfig
     kelly: KellyConfig = KellyConfig()
     leverage: LeverageConfig = LeverageConfig()
+    execution_safety: ExecutionSafetyConfig = ExecutionSafetyConfig()
+    entry_quality: EntryQualityConfig = EntryQualityConfig()
     scoring: ScoringConfig = ScoringConfig()
     stop: StopConfig = StopConfig()
     account_snapshot: AccountSnapshotConfig

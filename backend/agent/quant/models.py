@@ -1,6 +1,7 @@
 """Shared models for deterministic strategy guardrails."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -20,6 +21,7 @@ class IndicatorFrame:
     highs: list[float] = field(default_factory=list)
     lows: list[float] = field(default_factory=list)
     closes: list[float] = field(default_factory=list)
+    timestamp: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -31,11 +33,32 @@ class SymbolMarketContext:
 
     @property
     def current_price(self) -> float | None:
+        reference = self.get_reference_frame()
+        if reference:
+            return reference[1].current_price
+        return None
+
+    def get_reference_frame(self) -> tuple[str, IndicatorFrame] | None:
         for timeframe in ("3m", "1h", "4h"):
             frame = self.timeframes.get(timeframe)
             if frame:
-                return frame.current_price
+                return timeframe, frame
         return None
+
+    @property
+    def reference_price(self) -> float | None:
+        reference = self.get_reference_frame()
+        return reference[1].current_price if reference else None
+
+    @property
+    def reference_timeframe(self) -> str | None:
+        reference = self.get_reference_frame()
+        return reference[0] if reference else None
+
+    @property
+    def reference_timestamp(self) -> datetime | None:
+        reference = self.get_reference_frame()
+        return reference[1].timestamp if reference else None
 
 
 @dataclass(frozen=True)
@@ -87,16 +110,30 @@ class PositionSizingResult:
 
 
 @dataclass(frozen=True)
+class EntryQualityResult:
+    can_enter: bool
+    hold_reason: str | None
+    checks: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class QuantGuardrail:
     symbol: str
     score: ScoreResult
     stops: StopResult
     sizing: PositionSizingResult
+    entry_quality: EntryQualityResult
+    reference_price: float | None
+    reference_timeframe: str | None
+    reference_timestamp: datetime | None
     action_allowed: bool
     allowed_action: str
     hold_reason: str | None
 
     def to_prompt_dict(self) -> dict[str, Any]:
+        reference_timestamp = (
+            self.reference_timestamp.isoformat() if self.reference_timestamp else None
+        )
         return {
             "symbol": self.symbol,
             "direction_bias": self.score.direction_bias,
@@ -111,6 +148,9 @@ class QuantGuardrail:
                 "breakdown": self.score.short_score.breakdown,
                 "notes": self.score.short_score.notes,
             },
+            "reference_price": self.reference_price,
+            "reference_timeframe": self.reference_timeframe,
+            "reference_timestamp": reference_timestamp,
             "stops": {
                 "long": self.stops.long.__dict__,
                 "short": self.stops.short.__dict__,
@@ -118,8 +158,8 @@ class QuantGuardrail:
                 "current_price": self.stops.current_price,
             },
             "sizing": self.sizing.__dict__,
+            "entry_quality": self.entry_quality.__dict__,
             "action_allowed": self.action_allowed,
             "allowed_action": self.allowed_action,
             "hold_reason": self.hold_reason,
         }
-

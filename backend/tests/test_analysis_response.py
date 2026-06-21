@@ -7,6 +7,7 @@ from agent.nodes.analysis_node import (
 )
 from agent.quant.models import (
     DirectionScore,
+    EntryQualityResult,
     PositionSizingResult,
     QuantGuardrail,
     ScoreResult,
@@ -104,6 +105,14 @@ def _guardrail(long_score=6.0, short_score=4.0, action_allowed=False):
             can_open=action_allowed,
             hold_reason="仓位低于 100 美元下限，强制 HOLD",
         ),
+        entry_quality=EntryQualityResult(
+            can_enter=action_allowed,
+            hold_reason=None if action_allowed else "仓位低于 100 美元下限，强制 HOLD",
+            checks={"enabled": True},
+        ),
+        reference_price=100.0,
+        reference_timeframe="3m",
+        reference_timestamp=datetime.now(),
         action_allowed=action_allowed,
         allowed_action="OPEN_LONG" if action_allowed and direction == "LONG" else "HOLD",
         hold_reason=None if action_allowed else "仓位低于 100 美元下限，强制 HOLD",

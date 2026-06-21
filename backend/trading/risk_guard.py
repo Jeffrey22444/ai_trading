@@ -39,10 +39,36 @@ def validate_open_decision(
     max_position_size_percent: float,
     testnet: bool,
     allow_live_trading: bool,
+    reference_price: float | None = None,
+    max_entry_price_drift_pct: float | None = None,
+    max_chase_price_drift_pct: float | None = None,
 ) -> float:
     """Reject an opening decision before it reaches the exchange."""
     if not testnet and not allow_live_trading:
         raise ValueError("实盘开仓已禁用；必须显式启用 allow_live_trading")
+
+    if reference_price is not None:
+        if reference_price <= 0:
+            raise ValueError("参考价格必须大于 0")
+        drift_pct = abs(current_price - reference_price) / reference_price
+        if (
+            max_entry_price_drift_pct is not None
+            and drift_pct > max_entry_price_drift_pct
+        ):
+            raise ValueError("执行价格相对评分参考价偏离过大")
+        if max_chase_price_drift_pct is not None:
+            if (
+                action == "OPEN_LONG"
+                and current_price
+                > reference_price * (1 + max_chase_price_drift_pct)
+            ):
+                raise ValueError("OPEN_LONG 执行价高于参考价，触发追价保护")
+            if (
+                action == "OPEN_SHORT"
+                and current_price
+                < reference_price * (1 - max_chase_price_drift_pct)
+            ):
+                raise ValueError("OPEN_SHORT 执行价低于参考价，触发追价保护")
 
     normalized_position_size = normalize_position_size_usd(
         position_size_usd=position_size_usd,

@@ -63,6 +63,18 @@ leverage:
     4: 0.25
     5: 0.25
 
+execution_safety:
+  max_entry_price_drift_pct: 0.003
+  max_chase_price_drift_pct: 0.0015
+
+entry_quality:
+  enabled: true
+  max_rsi_long: 70
+  min_rsi_short: 30
+  max_price_ema20_distance_atr: 1.2
+  require_momentum_not_decaying: true
+  max_market_data_age_seconds: 120
+
 scoring:
   entry_score_threshold: 6.0
   exit_score_threshold: 5.0

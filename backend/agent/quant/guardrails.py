@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agent.quant.entry_quality import evaluate_entry_quality
 from agent.quant.indicators import build_market_context
 from agent.quant.models import QuantGuardrail
 from agent.quant.position_sizing import calculate_position_size
@@ -31,11 +32,13 @@ def build_quant_guardrail(
     sizing = calculate_position_size(
         score, available_balance, config.kelly, config.leverage, config.scoring
     )
+    entry_quality = evaluate_entry_quality(context, score.direction_bias, config)
     allowed_action = (
         f"OPEN_{score.direction_bias}" if score.direction_bias in {"LONG", "SHORT"} else "HOLD"
     )
     hold_reason = None
-    action_allowed = sizing.can_open and stops.current_price is not None
+    stops_valid = stops.current_price is not None
+    action_allowed = sizing.can_open and stops_valid and entry_quality.can_enter
     if not sizing.can_open:
         hold_reason = sizing.hold_reason
         action_allowed = False
@@ -52,12 +55,20 @@ def build_quant_guardrail(
         hold_reason = "空头止损止盈数据不足，强制 HOLD"
         action_allowed = False
         allowed_action = "HOLD"
+    elif not entry_quality.can_enter:
+        hold_reason = entry_quality.hold_reason
+        action_allowed = False
+        allowed_action = "HOLD"
 
     return QuantGuardrail(
         symbol=context.symbol,
         score=score,
         stops=stops,
         sizing=sizing,
+        entry_quality=entry_quality,
+        reference_price=context.reference_price,
+        reference_timeframe=context.reference_timeframe,
+        reference_timestamp=context.reference_timestamp,
         action_allowed=action_allowed,
         allowed_action=allowed_action,
         hold_reason=hold_reason,

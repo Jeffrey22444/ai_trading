@@ -62,7 +62,7 @@ async def trading_execution_node(state: AgentState) -> AgentState:
                     symbol, decision, trader, balance, positions
                 )
                 decision["execution_result"] = execution_result
-                decision["execution_status"] = "completed" if execution_result["status"] == "success" else "failed"
+                decision["execution_status"] = _execution_status(execution_result)
                 
             except Exception as e:
                 logger.error(f"执行 {symbol} 平仓失败: {e}")
@@ -89,7 +89,7 @@ async def trading_execution_node(state: AgentState) -> AgentState:
                     symbol, decision, trader, balance, positions
                 )
                 decision["execution_result"] = execution_result
-                decision["execution_status"] = "completed" if execution_result["status"] == "success" else "failed"
+                decision["execution_status"] = _execution_status(execution_result)
                 
             except Exception as e:
                 logger.error(f"执行 {symbol} 开仓失败: {e}")
@@ -172,18 +172,25 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
+    reference_price = _decision_reference_price(decision)
 
-    position_size_usd = validate_open_decision(
-        action="OPEN_LONG",
-        position_size_usd=position_size_usd,
-        current_price=current_price,
-        stop_loss_price=stop_loss_price,
-        take_profit_price=take_profit_price,
-        available_balance=balance.available_balance,
-        max_position_size_percent=config.default_risk.max_position_size_percent,
-        testnet=config.exchange.testnet,
-        allow_live_trading=config.exchange.allow_live_trading,
-    )
+    try:
+        position_size_usd = validate_open_decision(
+            action="OPEN_LONG",
+            position_size_usd=position_size_usd,
+            current_price=current_price,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            available_balance=balance.available_balance,
+            max_position_size_percent=config.default_risk.max_position_size_percent,
+            testnet=config.exchange.testnet,
+            allow_live_trading=config.exchange.allow_live_trading,
+            reference_price=reference_price,
+            max_entry_price_drift_pct=config.execution_safety.max_entry_price_drift_pct,
+            max_chase_price_drift_pct=config.execution_safety.max_chase_price_drift_pct,
+        )
+    except ValueError as exc:
+        return _open_reject_result("OPEN_LONG", symbol, str(exc), current_price, reference_price)
     quantity = position_size_usd / current_price
     
     # 执行开多仓（含止损止盈）
@@ -198,6 +205,12 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
         "quantity": quantity,
         "leverage": leverage,
         "price": current_price,
+        "current_price": current_price,
+        "reference_price": reference_price,
+        "drift_pct": _drift_pct(current_price, reference_price),
+        "chase_drift_pct": _directional_chase_drift_pct(
+            "OPEN_LONG", current_price, reference_price
+        ),
         "message": f"开多仓成功: {quantity} @ ${current_price}"
     }
 
@@ -210,18 +223,25 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
     # 获取止损止盈价格
     stop_loss_price = decision.get("stop_loss_price")
     take_profit_price = decision.get("take_profit_price")
+    reference_price = _decision_reference_price(decision)
 
-    position_size_usd = validate_open_decision(
-        action="OPEN_SHORT",
-        position_size_usd=position_size_usd,
-        current_price=current_price,
-        stop_loss_price=stop_loss_price,
-        take_profit_price=take_profit_price,
-        available_balance=balance.available_balance,
-        max_position_size_percent=config.default_risk.max_position_size_percent,
-        testnet=config.exchange.testnet,
-        allow_live_trading=config.exchange.allow_live_trading,
-    )
+    try:
+        position_size_usd = validate_open_decision(
+            action="OPEN_SHORT",
+            position_size_usd=position_size_usd,
+            current_price=current_price,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            available_balance=balance.available_balance,
+            max_position_size_percent=config.default_risk.max_position_size_percent,
+            testnet=config.exchange.testnet,
+            allow_live_trading=config.exchange.allow_live_trading,
+            reference_price=reference_price,
+            max_entry_price_drift_pct=config.execution_safety.max_entry_price_drift_pct,
+            max_chase_price_drift_pct=config.execution_safety.max_chase_price_drift_pct,
+        )
+    except ValueError as exc:
+        return _open_reject_result("OPEN_SHORT", symbol, str(exc), current_price, reference_price)
     quantity = position_size_usd / current_price
     
     # 执行开空仓（含止损止盈）
@@ -236,6 +256,12 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
         "quantity": quantity,
         "leverage": leverage,
         "price": current_price,
+        "current_price": current_price,
+        "reference_price": reference_price,
+        "drift_pct": _drift_pct(current_price, reference_price),
+        "chase_drift_pct": _directional_chase_drift_pct(
+            "OPEN_SHORT", current_price, reference_price
+        ),
         "message": f"开空仓成功: {quantity} @ ${current_price}"
     }
 
@@ -285,3 +311,59 @@ def _decision_leverage(decision: Dict[str, Any]) -> int:
     if leverage > config.leverage.max_leverage:
         raise ValueError(f"杠杆超过配置上限 {config.leverage.max_leverage}x")
     return leverage
+
+
+def _execution_status(execution_result: Dict[str, Any]) -> str:
+    if execution_result["status"] == "success":
+        return "completed"
+    if execution_result["status"] == "blocked":
+        return "blocked"
+    return "failed"
+
+
+def _decision_reference_price(decision: Dict[str, Any]) -> float | None:
+    reference_price = decision.get("reference_price")
+    if reference_price is None and isinstance(decision.get("quant_guardrail"), dict):
+        reference_price = decision["quant_guardrail"].get("reference_price")
+    return float(reference_price) if reference_price is not None else None
+
+
+def _open_reject_result(
+    action: str,
+    symbol: str,
+    reason: str,
+    current_price: float,
+    reference_price: float | None,
+) -> Dict[str, Any]:
+    return {
+        "status": "blocked",
+        "action": action,
+        "symbol": symbol,
+        "error": reason,
+        "reject_reason": reason,
+        "blocked_by": "risk_guard",
+        "current_price": current_price,
+        "reference_price": reference_price,
+        "drift_pct": _drift_pct(current_price, reference_price),
+        "chase_drift_pct": _directional_chase_drift_pct(
+            action, current_price, reference_price
+        ),
+    }
+
+
+def _drift_pct(current_price: float, reference_price: float | None) -> float | None:
+    if reference_price is None or reference_price <= 0:
+        return None
+    return abs(current_price - reference_price) / reference_price
+
+
+def _directional_chase_drift_pct(
+    action: str, current_price: float, reference_price: float | None
+) -> float | None:
+    if reference_price is None or reference_price <= 0:
+        return None
+    if action == "OPEN_LONG":
+        return max(0.0, (current_price - reference_price) / reference_price)
+    if action == "OPEN_SHORT":
+        return max(0.0, (reference_price - current_price) / reference_price)
+    return None

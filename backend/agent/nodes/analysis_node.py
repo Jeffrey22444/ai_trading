@@ -231,7 +231,9 @@ def analysis_node(tools: List):
 4. 采用系统量化护栏里的 leverage
 
 如果准备开仓且系统量化护栏 action_allowed=false，必须 HOLD。该限制只约束 OPEN_LONG/OPEN_SHORT，不约束 CLOSE_LONG/CLOSE_SHORT。
-已有持仓失效、风控恶化或策略要求退出时，AI 仍可输出平仓动作。AI 可以否决开仓改为 HOLD，但不得反向开仓，不得放大仓位。AI 判断不确定时必须 HOLD。"""
+action_allowed=true 不是必须开仓，只代表系统没有硬性禁止。AI 的主要职责是拒绝低质量入场；如果存在追高/追低、RSI 过热/过冷、MACD 动能衰减、价格远离 EMA20、reference_timestamp 数据过期，或无法解释入场优势，必须把系统允许的 OPEN_LONG/OPEN_SHORT 改为 HOLD。
+direction_bias 只是候选方向，不是开仓理由。AI 可以把系统允许的 OPEN_LONG/OPEN_SHORT 改为 HOLD，但不得反向开仓，不得放大仓位。
+已有持仓失效、风控恶化或策略要求退出时，AI 仍可输出平仓动作。AI 判断不确定时必须 HOLD。"""
 
             # 获取用户交易策略（三层优先级）
             user_trading_strategy = await get_trading_strategy()

@@ -43,6 +43,7 @@ def build_market_context(symbol: str, timeframes: list[str]) -> SymbolMarketCont
             highs=[float(value) for value in highs],
             lows=[float(value) for value in lows],
             closes=[float(value) for value in closes],
+            timestamp=klines[-1].timestamp,
         )
 
     current = derivatives_cache.get_snapshot(logical_symbol)
@@ -78,4 +79,3 @@ def _derivatives_dict(snapshot) -> dict:
         "premium": snapshot.premium,
         "timestamp": snapshot.timestamp.isoformat() if snapshot.timestamp else None,
     }
-

@@ -1,3 +1,7 @@
+from datetime import datetime
+from types import SimpleNamespace
+
+from agent.quant.guardrails import build_quant_guardrail
 from agent.quant.models import (
     DirectionScore,
     IndicatorFrame,
@@ -7,7 +11,14 @@ from agent.quant.models import (
 from agent.quant.position_sizing import calculate_position_size
 from agent.quant.scoring import score_symbol
 from agent.quant.stops import calculate_stops
-from config.agent_config import KellyConfig, LeverageConfig, ScoringConfig, StopConfig
+from config.agent_config import (
+    EntryQualityConfig,
+    KellyConfig,
+    LeverageConfig,
+    ScoringConfig,
+    StopConfig,
+    load_app_config,
+)
 
 
 def _score_result(total=8.0, direction="LONG"):
@@ -34,6 +45,7 @@ def _frame(
     rsi=55.0,
     atr=5.0,
     natr=3.0,
+    timestamp=None,
 ):
     return IndicatorFrame(
         current_price=price,
@@ -89,6 +101,7 @@ def _frame(
             117,
         ],
         closes=[100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 119, 120],
+        timestamp=timestamp,
     )
 
 
@@ -100,6 +113,45 @@ def _context(symbol="ETH", frame=None, previous_oi=1000.0, current_oi=1100.0):
         derivatives={"open_interest": current_oi, "funding_rate": 0.0001},
         previous_derivatives={"open_interest": previous_oi},
     )
+
+
+def _guardrail_config(entry_quality=None):
+    return SimpleNamespace(
+        scoring=ScoringConfig(),
+        stop=StopConfig(),
+        kelly=KellyConfig(min_position_usd=10),
+        leverage=LeverageConfig(),
+        entry_quality=entry_quality or EntryQualityConfig(),
+    )
+
+
+def _guardrail_context_for_frame(frame, symbol="ETH"):
+    return SymbolMarketContext(
+        symbol=symbol,
+        timeframes={"3m": frame, "1h": frame, "4h": frame},
+        derivatives={"open_interest": 1100.0, "funding_rate": 0.0001},
+        previous_derivatives={"open_interest": 1000.0},
+    )
+
+
+def _fresh_long_frame(**overrides):
+    values = {"timestamp": datetime.now()}
+    values.update(overrides)
+    return _frame(**values)
+
+
+def _fresh_short_frame(**overrides):
+    values = {
+        "price": 80.0,
+        "ema20": 90.0,
+        "ema50": 100.0,
+        "macd": -2.0,
+        "previous_macd": -1.0,
+        "rsi": 45.0,
+        "timestamp": datetime.now(),
+    }
+    values.update(overrides)
+    return _frame(**values)
 
 
 def test_kelly_position_sizing_is_code_calculated_and_uses_100_usd_minimum():
@@ -183,3 +235,173 @@ def test_objective_stops_are_directionally_valid_and_two_to_one():
     assert result.short.take_profit < result.current_price < result.short.stop_loss
     assert result.long.risk_reward == 2.0
     assert result.short.risk_reward == 2.0
+
+
+def test_safety_and_entry_quality_config_loads_from_agent_yaml():
+    config = load_app_config()
+
+    assert config.entry_quality.enabled is True
+    assert config.execution_safety.max_entry_price_drift_pct == 0.003
+
+
+def test_quant_guardrail_outputs_reference_price_from_3m_first():
+    timestamp = datetime(2026, 6, 18, 12, 0, 0)
+    context = SymbolMarketContext(
+        symbol="ETH",
+        timeframes={
+            "3m": _frame(price=121.0, timestamp=timestamp),
+            "1h": _frame(price=120.0, timestamp=datetime(2026, 6, 18, 11, 0, 0)),
+            "4h": _frame(price=119.0, timestamp=datetime(2026, 6, 18, 8, 0, 0)),
+        },
+        derivatives={"open_interest": 1100.0, "funding_rate": 0.0001},
+        previous_derivatives={"open_interest": 1000.0},
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+    prompt = guardrail.to_prompt_dict()
+
+    assert prompt["reference_price"] == 121.0
+    assert prompt["reference_timeframe"] == "3m"
+    assert prompt["reference_timestamp"] == "2026-06-18T12:00:00"
+
+
+def test_reference_frame_falls_back_to_1h_then_4h():
+    one_hour_context = SymbolMarketContext(
+        symbol="ETH",
+        timeframes={
+            "1h": _frame(price=120.0, timestamp=datetime(2026, 6, 18, 11, 0, 0)),
+            "4h": _frame(price=119.0, timestamp=datetime(2026, 6, 18, 8, 0, 0)),
+        },
+        derivatives={},
+        previous_derivatives={},
+    )
+    four_hour_context = SymbolMarketContext(
+        symbol="ETH",
+        timeframes={
+            "4h": _frame(price=119.0, timestamp=datetime(2026, 6, 18, 8, 0, 0)),
+        },
+        derivatives={},
+        previous_derivatives={},
+    )
+
+    assert one_hour_context.reference_price == 120.0
+    assert one_hour_context.reference_timeframe == "1h"
+    assert four_hour_context.reference_price == 119.0
+    assert four_hour_context.reference_timeframe == "4h"
+
+
+def test_entry_quality_blocks_long_when_rsi_is_overheated():
+    context = _guardrail_context_for_frame(_fresh_long_frame(rsi=71.0))
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert guardrail.to_prompt_dict()["entry_quality"]["can_enter"] is False
+    assert "RSI" in guardrail.hold_reason
+
+
+def test_entry_quality_blocks_short_when_rsi_is_too_cold():
+    context = _guardrail_context_for_frame(_fresh_short_frame(rsi=29.0))
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert guardrail.to_prompt_dict()["entry_quality"]["can_enter"] is False
+    assert "RSI" in guardrail.hold_reason
+
+
+def test_entry_quality_blocks_long_when_price_chases_above_ema20():
+    context = _guardrail_context_for_frame(
+        _fresh_long_frame(price=120.0, ema20=110.0, atr=5.0)
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert "EMA20" in guardrail.hold_reason
+
+
+def test_entry_quality_blocks_short_when_price_chases_below_ema20():
+    context = _guardrail_context_for_frame(
+        _fresh_short_frame(price=80.0, ema20=90.0, atr=5.0)
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert "EMA20" in guardrail.hold_reason
+
+
+def test_entry_quality_blocks_long_when_macd_momentum_decays():
+    context = _guardrail_context_for_frame(
+        _fresh_long_frame(price=112.0, ema20=110.0, macd=1.0, previous_macd=1.0)
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert "MACD" in guardrail.hold_reason
+
+
+def test_entry_quality_blocks_short_when_macd_momentum_decays():
+    context = _guardrail_context_for_frame(
+        _fresh_short_frame(price=88.0, ema20=90.0, macd=-1.0, previous_macd=-1.0)
+    )
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert "MACD" in guardrail.hold_reason
+
+
+def test_entry_quality_can_be_disabled():
+    context = _guardrail_context_for_frame(_fresh_long_frame(rsi=80.0))
+
+    guardrail = build_quant_guardrail(
+        context,
+        None,
+        10_000.0,
+        _guardrail_config(EntryQualityConfig(enabled=False)),
+    )
+
+    assert guardrail.entry_quality.can_enter is True
+    assert guardrail.to_prompt_dict()["entry_quality"]["checks"]["enabled"] is False
+
+
+def test_entry_quality_blocks_when_required_fields_are_missing():
+    context = _guardrail_context_for_frame(_fresh_long_frame(price=112.0, rsi=None))
+
+    guardrail = build_quant_guardrail(context, None, 10_000.0, _guardrail_config())
+
+    assert guardrail.action_allowed is False
+    assert "字段缺失" in guardrail.hold_reason
+    assert "rsi14" in guardrail.entry_quality.checks["missing_fields"]
+
+
+def test_quant_guardrail_prompt_dict_contains_review_fields():
+    context = _guardrail_context_for_frame(_fresh_long_frame(price=112.0, ema20=110.0))
+
+    prompt = build_quant_guardrail(
+        context, None, 10_000.0, _guardrail_config()
+    ).to_prompt_dict()
+
+    for field in (
+        "direction_bias",
+        "total_score",
+        "long_score",
+        "short_score",
+        "reference_price",
+        "reference_timeframe",
+        "reference_timestamp",
+        "entry_quality",
+        "action_allowed",
+        "allowed_action",
+        "hold_reason",
+    ):
+        assert field in prompt
+
+    assert "total" in prompt["long_score"]
+    assert "breakdown" in prompt["long_score"]
+    assert "notes" in prompt["long_score"]
+    assert "can_enter" in prompt["entry_quality"]
+    assert "checks" in prompt["entry_quality"]
