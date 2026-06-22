@@ -8,7 +8,7 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 - **Status**: In Progress
 - **Description**: Created branch `regime` from clean `main` and added deterministic regime execution primitives for config/schema validation, regime normalization, router, F1-F4/Q scoring, direction edge rules, risk budget/gates, order construction, post-fill protection, position state transitions, reconciliation, and loop gating.
 - **URL**: local branch `regime`
-- **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`133 passed, 1 warning`). AI analysis now outputs only regime classification; deterministic code converts regime + quant guardrails into entry/hold decisions and applies the regime risk gate. Hyperliquid open results now carry accepted SL/TP protection metadata into execution results. Remaining live gap is persisted reconciliation/state-machine storage.
+- **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`134 passed, 1 warning`). AI analysis now outputs only regime classification; deterministic code converts regime + quant guardrails into entry/hold decisions and applies the regime risk gate. Execution results now persist position state in the existing analysis JSON; capital is released only after the post-close position refresh confirms flat.
 
 ### 2026-06-22 - GH: Revert AI_trading Root Migration And Keep Work Log Tracked
 - **Status**: Completed

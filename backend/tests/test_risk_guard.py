@@ -7,6 +7,7 @@ from agent.nodes.trading_execution_node import (
     _decision_leverage,
     _execute_open_long,
     _execute_open_short,
+    _mark_confirmed_closed,
 )
 from trading.risk_guard import normalize_position_size_usd, validate_open_decision
 
@@ -263,3 +264,17 @@ async def test_execution_result_exposes_post_fill_protection_status():
     assert result["status"] == "success"
     assert result["protection_verified"] is True
     assert result["protection_order_count"] == 2
+    assert result["position_state"]["state"] == "ACTIVE"
+    assert result["position_state"]["capital_released"] is False
+
+
+def test_capital_releases_only_after_exchange_confirms_flat():
+    decision = {
+        "execution_status": "completed",
+        "execution_result": {"status": "success"},
+    }
+
+    _mark_confirmed_closed({"BTC": decision}, positions=[])
+
+    assert decision["execution_result"]["position_state"]["state"] == "CLOSED"
+    assert decision["execution_result"]["position_state"]["capital_released"] is True

@@ -77,6 +77,7 @@ async def trading_execution_node(state: AgentState) -> AgentState:
             try:
                 balance = await trader.get_balance()
                 positions = await trader.get_positions()
+                _mark_confirmed_closed(close_decisions, positions)
                 logger.info(f"平仓后账户余额: ${balance.total_balance}, 持仓数量: {len(positions)}")
             except Exception as e:
                 logger.error(f"重新获取账户状态失败: {e}")
@@ -210,6 +211,15 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
         "reference_price": reference_price,
         "protection_verified": bool(order.get("protection_verified")),
         "protection_order_count": len(order.get("protection_orders", [])),
+        "position_state": _active_position_state(
+            symbol=symbol,
+            side="LONG",
+            lifecycle=decision.get("lifecycle"),
+            entry_price=current_price,
+            quantity=quantity,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+        ),
         "drift_pct": _drift_pct(current_price, reference_price),
         "chase_drift_pct": _directional_chase_drift_pct(
             "OPEN_LONG", current_price, reference_price
@@ -265,6 +275,15 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
         "reference_price": reference_price,
         "protection_verified": bool(order.get("protection_verified")),
         "protection_order_count": len(order.get("protection_orders", [])),
+        "position_state": _active_position_state(
+            symbol=symbol,
+            side="SHORT",
+            lifecycle=decision.get("lifecycle"),
+            entry_price=current_price,
+            quantity=quantity,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+        ),
         "drift_pct": _drift_pct(current_price, reference_price),
         "chase_drift_pct": _directional_chase_drift_pct(
             "OPEN_SHORT", current_price, reference_price
@@ -374,3 +393,44 @@ def _directional_chase_drift_pct(
     if action == "OPEN_SHORT":
         return max(0.0, (reference_price - current_price) / reference_price)
     return None
+
+
+def _active_position_state(
+    *,
+    symbol: str,
+    side: str,
+    lifecycle: str | None,
+    entry_price: float,
+    quantity: float,
+    stop_loss_price: float,
+    take_profit_price: float,
+) -> dict:
+    return {
+        "symbol": symbol,
+        "side": side,
+        "lifecycle": lifecycle,
+        "state": "ACTIVE",
+        "failure_mode": "NONE",
+        "entry_price": entry_price,
+        "size": quantity,
+        "stop_loss": stop_loss_price,
+        "take_profit": take_profit_price,
+        "opened_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "capital_released": False,
+    }
+
+
+def _mark_confirmed_closed(close_decisions: dict, positions) -> None:
+    for symbol, decision in close_decisions.items():
+        still_open = any(same_symbol(pos.symbol, symbol) for pos in positions)
+        if still_open or decision.get("execution_status") != "completed":
+            continue
+        result = decision.setdefault("execution_result", {})
+        result["position_state"] = {
+            "symbol": symbol,
+            "state": "CLOSED",
+            "failure_mode": "NONE",
+            "updated_at": datetime.now().isoformat(),
+            "capital_released": True,
+        }
