@@ -8,7 +8,7 @@ from datetime import datetime
 
 class SymbolDecision(TypedDict):
     """单个交易标的的决策和执行结果"""
-    action: str  # "BUY", "SELL", "HOLD"
+    action: str  # OPEN_*, CLOSE_*, ENTRY_HOLD, POSITION_HOLD
     reasoning: str  # AI reasoning for this symbol
     execution_result: Optional[Dict[str, Any]]  # 交易执行结果
     execution_status: str  # "pending", "success", "failed"
@@ -25,5 +25,4 @@ class AgentState(TypedDict):
     
     # 错误处理
     error: Optional[str]  # Analysis or execution error
-
 

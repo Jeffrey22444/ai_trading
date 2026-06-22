@@ -34,7 +34,9 @@ def build_quant_guardrail(
     )
     entry_quality = evaluate_entry_quality(context, score.direction_bias, config)
     allowed_action = (
-        f"OPEN_{score.direction_bias}" if score.direction_bias in {"LONG", "SHORT"} else "HOLD"
+        f"OPEN_{score.direction_bias}"
+        if score.direction_bias in {"LONG", "SHORT"}
+        else "ENTRY_HOLD"
     )
     hold_reason = None
     stops_valid = stops.current_price is not None
@@ -42,23 +44,23 @@ def build_quant_guardrail(
     if not sizing.can_open:
         hold_reason = sizing.hold_reason
         action_allowed = False
-        allowed_action = "HOLD"
+        allowed_action = "ENTRY_HOLD"
     elif score.direction_bias == "LONG" and (
         stops.long.stop_loss is None or stops.long.take_profit is None
     ):
-        hold_reason = "多头止损止盈数据不足，强制 HOLD"
+        hold_reason = "多头止损止盈数据不足，强制 ENTRY_HOLD"
         action_allowed = False
-        allowed_action = "HOLD"
+        allowed_action = "ENTRY_HOLD"
     elif score.direction_bias == "SHORT" and (
         stops.short.stop_loss is None or stops.short.take_profit is None
     ):
-        hold_reason = "空头止损止盈数据不足，强制 HOLD"
+        hold_reason = "空头止损止盈数据不足，强制 ENTRY_HOLD"
         action_allowed = False
-        allowed_action = "HOLD"
+        allowed_action = "ENTRY_HOLD"
     elif not entry_quality.can_enter:
         hold_reason = entry_quality.hold_reason
         action_allowed = False
-        allowed_action = "HOLD"
+        allowed_action = "ENTRY_HOLD"
 
     return QuantGuardrail(
         symbol=context.symbol,

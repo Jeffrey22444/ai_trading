@@ -2,12 +2,12 @@
 LangGraph workflow for multi-symbol trading agent with modular nodes
 """
 import logging
-from typing import Dict, Any, List
-from datetime import datetime
+from typing import List
 from langgraph.graph import StateGraph, END
 
 from agent.state import AgentState
 from agent.nodes.analysis_node import analysis_node
+from agent.nodes.exit_decision_node import exit_decision_node
 from agent.nodes.trading_execution_node import trading_execution_node
 from agent.nodes.save_analysis_node import save_analysis_node
 
@@ -25,11 +25,13 @@ def create_trading_workflow(tools: List):
     
     # 添加节点到工作流程
     workflow.add_node("analysis", analysis)
+    workflow.add_node("exit_decision", exit_decision_node)
     workflow.add_node("trading_execution", trading_execution_node)
     workflow.add_node("save_analysis", save_analysis_node)
     
     # 定义工作流程边
-    workflow.add_edge("analysis", "trading_execution")
+    workflow.add_edge("analysis", "exit_decision")
+    workflow.add_edge("exit_decision", "trading_execution")
     workflow.add_edge("trading_execution", "save_analysis")
     workflow.add_edge("save_analysis", END)
     
@@ -37,4 +39,3 @@ def create_trading_workflow(tools: List):
     workflow.set_entry_point("analysis")
     
     return workflow.compile()
-

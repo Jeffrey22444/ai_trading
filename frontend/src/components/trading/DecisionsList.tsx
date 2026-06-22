@@ -55,7 +55,8 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
       case 'OPEN_SHORT':
       case 'CLOSE_LONG':
         return 'text-red-600';
-      case 'HOLD':
+      case 'ENTRY_HOLD':
+      case 'POSITION_HOLD':
         return 'text-gray-600';
       default:
         return 'text-gray-600';
@@ -72,7 +73,9 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
         return 'Close a long trade on';
       case 'CLOSE_SHORT':
         return 'Close a short trade on';
-      case 'HOLD':
+      case 'ENTRY_HOLD':
+        return 'No entry on';
+      case 'POSITION_HOLD':
         return 'Hold position on';
       default:
         return 'Action on';
@@ -162,9 +165,11 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
                   {decision.actions.map((tradeAction, actionIndex) => (
                     <div key={actionIndex} className="space-y-1">
                       <div className="flex items-center space-x-2 text-sm">
-                        {tradeAction.action === 'HOLD' ? (
+                        {tradeAction.action === 'ENTRY_HOLD' || tradeAction.action === 'POSITION_HOLD' ? (
                           <>
-                            <span className="text-gray-500">Hold position on</span>
+                            <span className="text-gray-500">
+                              {tradeAction.action === 'ENTRY_HOLD' ? 'No entry on' : 'Hold position on'}
+                            </span>
                             <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
                             <span className="font-bold text-black">
                               {displaySymbol(tradeAction.symbol)}

@@ -55,7 +55,7 @@ def evaluate_entry_quality(
     checks["market_data_allowed_age_seconds"] = allowed_age_seconds
     checks["timestamp_source"] = timestamp_source
     if age_seconds > allowed_age_seconds:
-        return _hold("参考行情数据过期，强制 HOLD", checks)
+        return _hold("参考行情数据过期，强制 ENTRY_HOLD", checks)
 
     if frame.atr <= 0:
         return _hold("ATR 无效，无法评估追价距离", checks)
@@ -65,7 +65,7 @@ def evaluate_entry_quality(
 
     if direction == "LONG":
         if frame.rsi14 > config.entry_quality.max_rsi_long:
-            return _hold("LONG RSI 过热，强制 HOLD", checks)
+            return _hold("LONG RSI 过热，强制 ENTRY_HOLD", checks)
         if (
             frame.current_price > frame.ema20
             and distance_atr > config.entry_quality.max_price_ema20_distance_atr
@@ -75,12 +75,12 @@ def evaluate_entry_quality(
             config.entry_quality.require_momentum_not_decaying
             and frame.macd_histogram <= frame.previous_macd_histogram
         ):
-            return _hold("LONG MACD 动能未扩张，强制 HOLD", checks)
+            return _hold("LONG MACD 动能未扩张，强制 ENTRY_HOLD", checks)
         return EntryQualityResult(True, None, checks)
 
     if direction == "SHORT":
         if frame.rsi14 < config.entry_quality.min_rsi_short:
-            return _hold("SHORT RSI 过冷，强制 HOLD", checks)
+            return _hold("SHORT RSI 过冷，强制 ENTRY_HOLD", checks)
         if (
             frame.current_price < frame.ema20
             and distance_atr > config.entry_quality.max_price_ema20_distance_atr
@@ -90,7 +90,7 @@ def evaluate_entry_quality(
             config.entry_quality.require_momentum_not_decaying
             and frame.macd_histogram >= frame.previous_macd_histogram
         ):
-            return _hold("SHORT MACD 动能未扩张，强制 HOLD", checks)
+            return _hold("SHORT MACD 动能未扩张，强制 ENTRY_HOLD", checks)
         return EntryQualityResult(True, None, checks)
 
     return EntryQualityResult(True, None, checks)

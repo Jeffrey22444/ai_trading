@@ -92,6 +92,12 @@ interface BackendPosition {
   mark_price: number;
   unrealized_pnl: number;
   percentage_pnl: number;
+  current_profit_pct: number;
+  peak_profit_pct: number;
+  drawdown_pct: number;
+  trailing_stop?: number | null;
+  regime: string;
+  holding_time_seconds: number;
   leverage: number;
   margin: number;
   timestamp: string;
@@ -161,6 +167,13 @@ function transformPositionData(backendPosition: BackendPosition): Position {
     leverage: backendPosition.leverage,
     notional: backendPosition.size * backendPosition.mark_price, // Calculate notional
     unrealizedPnl: backendPosition.unrealized_pnl,
+    entryPrice: backendPosition.entry_price,
+    currentProfitPct: backendPosition.current_profit_pct,
+    peakProfitPct: backendPosition.peak_profit_pct,
+    drawdownPct: backendPosition.drawdown_pct,
+    trailingStop: backendPosition.trailing_stop,
+    regime: backendPosition.regime,
+    holdingTimeSeconds: backendPosition.holding_time_seconds,
     timestamp: backendPosition.timestamp,
   };
 }

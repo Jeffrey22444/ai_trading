@@ -18,6 +18,7 @@ from config.agent_config import is_missing_secret
 from utils.logger import logger
 from trading.factory import get_trader
 from trading.position_service import get_position_service
+from agent.portfolio.position_manager import update_position_state
 from services.prompt_service import (
     get_trading_strategy,
     get_trading_strategy_field_catalog,
@@ -261,6 +262,7 @@ class SymbolDecisionResponse(BaseModel):
     take_profit_price: Optional[float] = None
     leverage: Optional[int] = None
     quant_guardrail: Optional[Dict[str, Any]] = None
+    position_state: Optional[Dict[str, Any]] = None
 
 
 class AgentAnalysisResponse(BaseModel):
@@ -314,6 +316,7 @@ async def run_agent_analysis():
                 take_profit_price=decision.get("take_profit_price"),
                 leverage=decision.get("leverage"),
                 quant_guardrail=decision.get("quant_guardrail"),
+                position_state=decision.get("position_state"),
             )
         
         response = AgentAnalysisResponse(
@@ -518,6 +521,12 @@ class PositionResponse(BaseModel):
     mark_price: float
     unrealized_pnl: float
     percentage_pnl: float
+    current_profit_pct: float
+    peak_profit_pct: float
+    drawdown_pct: float
+    trailing_stop: Optional[float] = None
+    regime: str
+    holding_time_seconds: int
     leverage: float
     margin: float
     timestamp: datetime
@@ -568,8 +577,10 @@ async def get_trading_positions():
         trader = get_trader()
         positions = await trader.get_positions()
         
-        return [
-            PositionResponse(
+        response = []
+        for pos in positions:
+            position_state = update_position_state(pos)
+            response.append(PositionResponse(
                 symbol=pos.symbol,
                 side=pos.side,
                 size=pos.size,
@@ -577,12 +588,17 @@ async def get_trading_positions():
                 mark_price=pos.mark_price,
                 unrealized_pnl=pos.unrealized_pnl,
                 percentage_pnl=pos.percentage_pnl,
+                current_profit_pct=position_state.unrealized_pnl_pct,
+                peak_profit_pct=position_state.peak_profit_pct,
+                drawdown_pct=position_state.drawdown_from_peak_pct,
+                trailing_stop=position_state.trailing_stop,
+                regime=position_state.regime,
+                holding_time_seconds=position_state.holding_time_seconds,
                 leverage=pos.leverage,
                 margin=pos.margin,
                 timestamp=pos.timestamp
-            )
-            for pos in positions
-        ]
+            ))
+        return response
         
     except Exception as e:
         logger.error(f"获取持仓失败: {e}")

@@ -5,7 +5,7 @@ export interface AccountValue {
 }
 
 export interface TradeAction {
-  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT' | 'HOLD';
+  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT' | 'ENTRY_HOLD' | 'POSITION_HOLD';
   symbol: string;
   quantity?: number;
   price?: number;
@@ -59,6 +59,13 @@ export interface Position {
   leverage: number;
   notional: number;
   unrealizedPnl: number;
+  entryPrice: number;
+  currentProfitPct: number;
+  peakProfitPct: number;
+  drawdownPct: number;
+  trailingStop?: number | null;
+  regime: string;
+  holdingTimeSeconds: number;
   timestamp: string;
 }
 

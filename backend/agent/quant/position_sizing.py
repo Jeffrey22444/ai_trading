@@ -13,13 +13,13 @@ def calculate_position_size(
     scoring_config,
 ) -> PositionSizingResult:
     if score.direction_bias == "NEUTRAL":
-        return _hold("方向不清晰，强制 HOLD")
+        return _hold("方向不清晰，强制 ENTRY_HOLD")
     if score.total_score < scoring_config.entry_score_threshold:
-        return _hold("评分低于入场阈值，强制 HOLD")
+        return _hold("评分低于入场阈值，强制 ENTRY_HOLD")
 
     winrate = _score_to_winrate(score.total_score, scoring_config.score_to_winrate)
     if winrate is None:
-        return _hold("评分无法映射胜率，强制 HOLD")
+        return _hold("评分无法映射胜率，强制 ENTRY_HOLD")
 
     leverage = min(
         _score_to_leverage(score.total_score, leverage_config.score_to_leverage),
@@ -40,7 +40,7 @@ def calculate_position_size(
             fractional_kelly=0.0,
             capped_fraction=0.0,
             can_open=False,
-            hold_reason="凯利最优比例 <= 0，强制 HOLD",
+            hold_reason="凯利最优比例 <= 0，强制 ENTRY_HOLD",
         )
 
     fractional = raw_kelly * kelly_fraction
@@ -56,7 +56,7 @@ def calculate_position_size(
             fractional_kelly=round(fractional, 6),
             capped_fraction=round(capped, 6),
             can_open=False,
-            hold_reason=f"仓位低于 {kelly_config.min_position_usd:.0f} 美元下限，强制 HOLD",
+            hold_reason=f"仓位低于 {kelly_config.min_position_usd:.0f} 美元下限，强制 ENTRY_HOLD",
         )
 
     return PositionSizingResult(
@@ -102,4 +102,3 @@ def _lookup_score_bucket(total_score: float, mapping: dict):
     if total_score >= 10 and "9-10" in mapping:
         return mapping["9-10"]
     return None
-

@@ -88,6 +88,23 @@ const PositionsList: React.FC<PositionsListProps> = ({ positions }) => {
                 <div className={`text-right font-medium ${getPnlColor(position.unrealizedPnl)}`}>
                   {formatPnl(position.unrealizedPnl)}
                 </div>
+
+                <div className="col-span-5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 sm:grid-cols-4">
+                  <div>Entry ${position.entryPrice.toFixed(2)}</div>
+                  <div className={getPnlColor(position.currentProfitPct)}>
+                    Profit {position.currentProfitPct.toFixed(2)}%
+                  </div>
+                  <div>Peak {position.peakProfitPct.toFixed(2)}%</div>
+                  <div>DD {position.drawdownPct.toFixed(2)}%</div>
+                  <div>
+                    Trail{' '}
+                    {position.trailingStop !== null && position.trailingStop !== undefined
+                      ? `${position.trailingStop.toFixed(2)}%`
+                      : '-'}
+                  </div>
+                  <div>{position.regime}</div>
+                  <div>Held {position.holdingTimeSeconds}s</div>
+                </div>
               </div>
             ))}
           

@@ -43,14 +43,13 @@ async def trading_execution_node(state: AgentState) -> AgentState:
                 close_decisions[symbol] = decision
             elif action in ["OPEN_LONG", "OPEN_SHORT"]:
                 open_decisions[symbol] = decision
-            elif action == "HOLD":
-                # HOLD 操作直接标记为完成
-                logger.info(f"{symbol}: HOLD - AI决策持仓观望，无需执行交易操作")
+            elif action in ["ENTRY_HOLD", "POSITION_HOLD", "HOLD"]:
+                logger.info(f"{symbol}: {action} - 无需执行交易操作")
                 decision["execution_result"] = {
                     "status": "success",
                     "action": action,
                     "symbol": symbol,
-                    "message": "持仓观望，无需执行交易",
+                    "message": "无需执行交易",
                     "timestamp": datetime.now().isoformat()
                 }
                 decision["execution_status"] = "completed"
@@ -115,14 +114,14 @@ async def _execute_futures_trading(symbol: str, decision: Dict[str, Any], trader
     timestamp = datetime.now().isoformat()
     
     try:
-        # 处理 HOLD 操作
-        if action == "HOLD":
-            logger.info(f"{symbol}: HOLD - AI决策持仓观望，无需执行交易操作")
+        # 处理 hold 操作
+        if action in {"ENTRY_HOLD", "POSITION_HOLD", "HOLD"}:
+            logger.info(f"{symbol}: {action} - 无需执行交易操作")
             return {
                 "status": "success",
                 "action": action,
                 "symbol": symbol,
-                "message": "HOLD操作，无需执行交易",
+                "message": "无需执行交易",
                 "timestamp": timestamp
             }
         
