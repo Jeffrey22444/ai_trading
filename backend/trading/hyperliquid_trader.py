@@ -110,31 +110,36 @@ class HyperliquidTrader:
             protection_quantity = filled
         else:
             protection_quantity = quantity
+        protection_orders = []
         close_side = "sell" if side == "buy" else "buy"
         try:
             if stop_loss_price is not None:
-                self._ensure_order_accepted(
-                    self.exchange.create_order(
-                        exchange_symbol,
-                        "market",
-                        close_side,
-                        protection_quantity,
-                        stop_loss_price,
-                        {"stopLossPrice": stop_loss_price, "reduceOnly": True},
-                    ),
-                    "止损保护单",
+                protection_orders.append(
+                    self._ensure_order_accepted(
+                        self.exchange.create_order(
+                            exchange_symbol,
+                            "market",
+                            close_side,
+                            protection_quantity,
+                            stop_loss_price,
+                            {"stopLossPrice": stop_loss_price, "reduceOnly": True},
+                        ),
+                        "止损保护单",
+                    )
                 )
             if take_profit_price is not None:
-                self._ensure_order_accepted(
-                    self.exchange.create_order(
-                        exchange_symbol,
-                        "market",
-                        close_side,
-                        protection_quantity,
-                        take_profit_price,
-                        {"takeProfitPrice": take_profit_price, "reduceOnly": True},
-                    ),
-                    "止盈保护单",
+                protection_orders.append(
+                    self._ensure_order_accepted(
+                        self.exchange.create_order(
+                            exchange_symbol,
+                            "market",
+                            close_side,
+                            protection_quantity,
+                            take_profit_price,
+                            {"takeProfitPrice": take_profit_price, "reduceOnly": True},
+                        ),
+                        "止盈保护单",
+                    )
                 )
         except Exception as exc:
             logger.error("Hyperliquid 保护单失败，正在立即减仓平仓")
@@ -151,6 +156,8 @@ class HyperliquidTrader:
             except Exception:
                 logger.exception("保护单失败后的紧急平仓也失败")
             raise RuntimeError("Hyperliquid 保护单失败，已尝试立即平仓") from exc
+        opening["protection_orders"] = protection_orders
+        opening["protection_verified"] = len(protection_orders) == 2
         return opening
 
     async def open_long(

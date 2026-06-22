@@ -235,3 +235,31 @@ async def test_execution_blocks_short_drift_without_calling_trader():
     assert result["current_price"] == 99.0
     assert result["drift_pct"] == 0.01
     trader.open_short.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execution_result_exposes_post_fill_protection_status():
+    trader = SimpleNamespace(
+        open_long=AsyncMock(
+            return_value={
+                "protection_verified": True,
+                "protection_orders": [{"id": "sl"}, {"id": "tp"}],
+            }
+        )
+    )
+    balance = SimpleNamespace(available_balance=1_000.0)
+    decision = {
+        "position_size_usd": 100.0,
+        "stop_loss_price": 95.0,
+        "take_profit_price": 110.0,
+        "leverage": 1,
+        "quant_guardrail": {"reference_price": 100.0},
+    }
+
+    result = await _execute_open_long(
+        "BTC", decision, trader, current_price=100.0, balance=balance
+    )
+
+    assert result["status"] == "success"
+    assert result["protection_verified"] is True
+    assert result["protection_order_count"] == 2

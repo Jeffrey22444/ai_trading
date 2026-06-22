@@ -193,7 +193,9 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
     quantity = position_size_usd / current_price
     
     # 执行开多仓（含止损止盈）
-    await trader.open_long(symbol, quantity, leverage, stop_loss_price, take_profit_price)
+    order = await trader.open_long(
+        symbol, quantity, leverage, stop_loss_price, take_profit_price
+    )
     
     logger.info(f"开多仓成功: {symbol} 数量:{quantity} 杠杆:{leverage}x 价格:${current_price}")
     
@@ -206,6 +208,8 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
         "price": current_price,
         "current_price": current_price,
         "reference_price": reference_price,
+        "protection_verified": bool(order.get("protection_verified")),
+        "protection_order_count": len(order.get("protection_orders", [])),
         "drift_pct": _drift_pct(current_price, reference_price),
         "chase_drift_pct": _directional_chase_drift_pct(
             "OPEN_LONG", current_price, reference_price
@@ -244,7 +248,9 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
     quantity = position_size_usd / current_price
     
     # 执行开空仓（含止损止盈）
-    await trader.open_short(symbol, quantity, leverage, stop_loss_price, take_profit_price)
+    order = await trader.open_short(
+        symbol, quantity, leverage, stop_loss_price, take_profit_price
+    )
     
     logger.info(f"开空仓成功: {symbol} 数量:{quantity} 杠杆:{leverage}x 价格:${current_price}")
     
@@ -257,6 +263,8 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
         "price": current_price,
         "current_price": current_price,
         "reference_price": reference_price,
+        "protection_verified": bool(order.get("protection_verified")),
+        "protection_order_count": len(order.get("protection_orders", [])),
         "drift_pct": _drift_pct(current_price, reference_price),
         "chase_drift_pct": _directional_chase_drift_pct(
             "OPEN_SHORT", current_price, reference_price

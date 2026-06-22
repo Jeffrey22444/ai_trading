@@ -91,7 +91,7 @@ def test_hyperliquid_trader_enables_sandbox(trader):
 
 @pytest.mark.asyncio
 async def test_open_long_uses_market_price_and_distinct_protection_params(trader):
-    await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
+    result = await trader.open_long("BTC", 0.1, 2, 95.0, 110.0)
 
     opening, stop_loss, take_profit = trader.exchange.orders
     assert opening["symbol"] == "BTC/USDC:USDC"
@@ -99,6 +99,8 @@ async def test_open_long_uses_market_price_and_distinct_protection_params(trader
     assert opening["price"] == 100.0
     assert stop_loss["params"] == {"stopLossPrice": 95.0, "reduceOnly": True}
     assert take_profit["params"] == {"takeProfitPrice": 110.0, "reduceOnly": True}
+    assert result["protection_verified"] is True
+    assert result["protection_orders"] == [stop_loss, take_profit]
 
 
 @pytest.mark.asyncio
