@@ -4,12 +4,12 @@ Agent Scheduler - Timing and scheduling logic for AI agent decision making
 import asyncio
 import logging
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 from agent.workflow import create_trading_workflow
 from config.settings import config
-from utils.logger import logger
+from services.prompt_service import PROMPT_CONTRACT_MISMATCH, get_regime_prompt_status
 
 logger = logging.getLogger("AlphaTransformer")
 
@@ -101,6 +101,15 @@ class AgentScheduler:
         """执行单次分析"""
         try:
             logger.info("开始执行 AI 交易分析")
+
+            prompt_status = await get_regime_prompt_status()
+            if not prompt_status.compatible:
+                logger.error(
+                    "%s: %s",
+                    PROMPT_CONTRACT_MISMATCH,
+                    prompt_status.mismatch_reason,
+                )
+                return
             
             # 1. 记录余额快照
             await self._record_balance_snapshot()

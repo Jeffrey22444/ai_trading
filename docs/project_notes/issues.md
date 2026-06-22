@@ -5,10 +5,16 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 ## Current Entries
 
 ### 2026-06-22 - Local Ops: Regime Deterministic Execution Core
-- **Status**: In Progress
+- **Status**: Completed
 - **Description**: Created branch `regime` from clean `main` and added deterministic regime execution primitives for config/schema validation, regime normalization, router, F1-F4/Q scoring, direction edge rules, risk budget/gates, order construction, post-fill protection, position state transitions, reconciliation, and loop gating.
 - **URL**: local branch `regime`
 - **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`143 passed, 1 warning`). AI analysis now outputs only regime classification; deterministic code converts regime + setup selector + F1-F4/Q + Direction + existing quant guardrails into entry/hold decisions, applies the regime risk gate, and uses the documented order construction formula for size/SL/TP. Execution uses bounded retries, persists position state in the existing analysis JSON, and releases capital only after the post-close position refresh confirms flat.
+
+### 2026-06-22 - Local Ops: Prompt Contract Deterministic Runtime
+- **Status**: Completed
+- **Description**: Added a regime deterministic prompt contract, regime-classifier-only prompt template, prompt service compatibility status, safe mismatch gates for analyze/start, strategy runtime status APIs, deterministic decision workflow split, and prompt contract tests.
+- **URL**: local branch `regime`
+- **Notes**: Legacy `trading_strategy.md` is deprecated as a runtime prompt; old database `trading_strategy` no longer becomes active unless explicitly archived/reset into the new regime prompt key. Backend pytest, scoped Ruff, and frontend production build pass.
 
 ### 2026-06-22 - GH: Revert AI_trading Root Migration And Keep Work Log Tracked
 - **Status**: Completed

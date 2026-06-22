@@ -2,8 +2,7 @@
 Optimized agent state for multi-symbol trading workflow
 Each symbol has independent action and execution tracking
 """
-from typing import TypedDict, Dict, Any, Optional, List
-from datetime import datetime
+from typing import TypedDict, Dict, Any, Optional
 
 
 class SymbolDecision(TypedDict):
@@ -26,3 +25,9 @@ class AgentState(TypedDict):
     # 错误处理
     error: Optional[str]  # Analysis or execution error
 
+    # Deterministic regime runtime metadata
+    strategy_runtime: Optional[Dict[str, Any]]
+    regime_classification: Optional[Dict[str, Any]]
+    deterministic_decisions: Optional[Dict[str, Any]]
+    regime_classification_result: Optional[Any]
+    analysis_context: Optional[Dict[str, Any]]

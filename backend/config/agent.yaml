@@ -17,9 +17,7 @@ agent:
     - "1h"
     - "4h"
   
-  # Runtime strategy text is stored in the database for Settings-page edits.
-  # This template is used to seed/reset the database strategy.
-  trading_strategy_template_path: "backend/config/trading_strategy.md"
+  regime_classifier_prompt_template_path: "backend/config/regime_classifier_prompt.md"
 
 # Exchange Configuration
 exchange:

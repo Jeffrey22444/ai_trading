@@ -10,7 +10,7 @@ from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent.quant.guardrails import build_quant_guardrails
 from agent.quant.indicators import build_market_context
@@ -24,31 +24,24 @@ from agent.regime.market import indicator_set_from_context
 from agent.regime.models import Regime, RegimeOutput
 from agent.state import AgentState
 from config.settings import config
-from services.prompt_service import get_trading_strategy
+from services.prompt_service import (
+    get_regime_classifier_prompt,
+    get_regime_prompt_status,
+    reject_trade_action_fields,
+)
 from trading.symbols import from_exchange_symbol, same_symbol
 
 
-class SymbolDecision(BaseModel):
-    """单个交易标的的决策"""
+class DeterministicSymbolDecision(BaseModel):
+    """Internal deterministic symbol decision."""
 
     symbol: str = Field(description="逻辑交易标的，例如 'BTC'")
-    action: str = Field(
-        description="期货交易决策，只能是 'OPEN_LONG'(开多仓), 'OPEN_SHORT'(开空仓), 'CLOSE_LONG'(平多仓), 'CLOSE_SHORT'(平空仓), 'ENTRY_HOLD'(不开新仓) 或 'POSITION_HOLD'(持仓继续)"
-    )
-    reasoning: str = Field(description="详细的推理过程，说明为什么做出这个决策")
-    position_size_usd: float = Field(
-        description="期望的仓位价值(美元)，仅对开仓操作有效，平仓操作会自动全部平仓",
-        default=0.0,
-    )
-    stop_loss_price: Optional[float] = Field(
-        description="止损价格，仅对开仓操作有效", default=None
-    )
-    take_profit_price: Optional[float] = Field(
-        description="止盈价格，仅对开仓操作有效", default=None
-    )
-    leverage: Optional[int] = Field(
-        description="杠杆倍数，仅对开仓操作有效；最终以系统量化护栏为准", default=None
-    )
+    action: str
+    reasoning: str
+    position_size_usd: float = 0.0
+    stop_loss_price: Optional[float] = None
+    take_profit_price: Optional[float] = None
+    leverage: Optional[int] = None
 
     @field_validator("position_size_usd", mode="before")
     @classmethod
@@ -61,35 +54,48 @@ class SymbolDecision(BaseModel):
         return from_exchange_symbol(value)
 
 
-class TradingDecision(BaseModel):
-    """完整的交易决策结构"""
-
-    symbol_decisions: List[SymbolDecision] = Field(description="所有交易标的的决策列表")
-    overall_summary: str = Field(description="整体市场状况分析和总结")
-
-
 class SymbolRegimeDecision(BaseModel):
     """AI regime classification for one symbol."""
+
+    model_config = ConfigDict(extra="forbid")
 
     symbol: str = Field(description="逻辑交易标的，例如 'BTC'")
     regime: Regime = Field(description="TREND, RANGE, BREAKOUT, or UNKNOWN")
     confidence: float = Field(ge=0.0, le=1.0)
     expires_at: int = Field(description="Unix timestamp seconds")
-    reasoning: str = Field(description="regime classification evidence")
+    evidence: list[str] = Field(default_factory=list)
+    reasoning: str = Field(default="")
 
     @field_validator("symbol")
     @classmethod
     def normalize_symbol(cls, value: str) -> str:
         return from_exchange_symbol(value)
 
+    @field_validator("expires_at", mode="before")
+    @classmethod
+    def normalize_expires_at(cls, value):
+        if isinstance(value, datetime):
+            return int(value.timestamp())
+        if isinstance(value, str):
+            normalized = value.replace("Z", "+00:00")
+            return int(datetime.fromisoformat(normalized).timestamp())
+        return value
+
 
 class RegimeClassification(BaseModel):
     """AI output is advisory regime classification only."""
 
+    model_config = ConfigDict(extra="forbid")
+
     symbol_regimes: List[SymbolRegimeDecision] = Field(
         description="每个标的的 regime 分类"
     )
-    overall_summary: str = Field(description="整体 regime 总结")
+    market_summary: str | None = None
+    overall_summary: str = Field(default="")
+
+    def model_post_init(self, __context) -> None:
+        if not self.overall_summary and self.market_summary:
+            self.overall_summary = self.market_summary
 
 
 logger = logging.getLogger("AlphaTransformer")
@@ -137,51 +143,19 @@ def supports_native_structured_output():
     """检查是否支持原生结构化输出"""
     return config.agent.model_name.startswith("gpt-4o") and config.agent.base_url is None
 
-def parse_json_response(response_text: str) -> TradingDecision:
-    """解析JSON格式的响应为TradingDecision对象"""
-    import json
-    import re
-    
-    # 提取JSON部分（去除markdown代码块标记等）
-    json_match = re.search(r'```json\s*\n(.*?)\n```', response_text, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(1)
-    else:
-        # 尝试直接解析整个响应
-        json_str = response_text.strip()
-    
-    try:
-        json_data = json.loads(json_str)
-        return TradingDecision(**json_data)
-    except Exception as e:
-        logger.error(f"解析JSON响应失败: {e}, 原始响应: {response_text}")
-        # 返回默认的 ENTRY_HOLD 决策
-        return TradingDecision(
-            symbol_decisions=[
-                SymbolDecision(
-                    symbol=symbol,
-                    action="ENTRY_HOLD",
-                    reasoning="JSON解析失败，采用保守策略",
-                    position_size_usd=0.0
-                ) for symbol in config.agent.symbols
-            ],
-            overall_summary="由于响应解析错误，所有标的采用观望策略"
-        )
-
 structured_llm = create_structured_llm()
 
 
-def parse_regime_response(response_text: str) -> RegimeClassification:
+def parse_regime_response(
+    response_text: str, required_symbols: Optional[list[str]] = None
+) -> RegimeClassification:
     """Parse JSON regime output and degrade to UNKNOWN on errors."""
     import re
 
-    json_match = re.search(r'```json\s*\n(.*?)\n```', response_text, re.DOTALL)
-    json_str = json_match.group(1) if json_match else response_text.strip()
-    try:
-        return RegimeClassification(**json.loads(json_str))
-    except Exception as e:
-        logger.error(f"解析 regime JSON 响应失败: {e}, 原始响应: {response_text}")
-        now = int(time.time())
+    symbols = required_symbols or list(config.agent.symbols)
+    now = int(time.time())
+
+    def unknown(summary: str) -> RegimeClassification:
         return RegimeClassification(
             symbol_regimes=[
                 SymbolRegimeDecision(
@@ -189,12 +163,51 @@ def parse_regime_response(response_text: str) -> RegimeClassification:
                     regime=Regime.UNKNOWN,
                     confidence=0.0,
                     expires_at=now,
-                    reasoning="regime JSON 解析失败，降级 UNKNOWN",
+                    evidence=["invalid_regime_output"],
+                    reasoning=summary,
                 )
-                for symbol in config.agent.symbols
+                for symbol in symbols
             ],
-            overall_summary="regime 解析失败，全部 UNKNOWN",
+            overall_summary=summary,
         )
+
+    json_match = re.search(r'```json\s*\n(.*?)\n```', response_text, re.DOTALL)
+    json_str = json_match.group(1) if json_match else response_text.strip()
+    try:
+        payload = json.loads(json_str)
+        if reject_trade_action_fields(payload):
+            return unknown("regime output contained trading decision fields")
+        parsed = RegimeClassification(**payload)
+    except Exception as e:
+        logger.error(f"解析 regime JSON 响应失败: {e}, 原始响应: {response_text}")
+        return unknown("regime JSON 解析失败，全部 UNKNOWN")
+
+    by_symbol = {item.symbol: item for item in parsed.symbol_regimes}
+    normalized = []
+    for symbol in symbols:
+        item = by_symbol.get(symbol)
+        if item is None:
+            normalized.append(
+                SymbolRegimeDecision(
+                    symbol=symbol,
+                    regime=Regime.UNKNOWN,
+                    confidence=0.0,
+                    expires_at=now,
+                    evidence=["missing_symbol"],
+                    reasoning="missing symbol regime",
+                )
+            )
+            continue
+        if (
+            item.confidence < config.regime_execution.regime.min_confidence
+            or item.expires_at < now
+        ):
+            item.regime = Regime.UNKNOWN
+        normalized.append(item)
+    return RegimeClassification(
+        symbol_regimes=normalized,
+        overall_summary=parsed.overall_summary or parsed.market_summary or "",
+    )
 
 
 def analysis_node(tools: List):
@@ -205,6 +218,13 @@ def analysis_node(tools: List):
         """ReAct 分析节点 - AI 主动调用工具获取技术数据并做出决策"""
         try:
             logger.info("开始 ReAct 分析...")
+            prompt_status = await get_regime_prompt_status()
+            state["strategy_runtime"] = prompt_status.to_dict()
+            if not prompt_status.compatible:
+                state["symbol_decisions"] = {}
+                state["overall_summary"] = prompt_status.message
+                state["error"] = prompt_status.error_code
+                return state
 
             # 获取配置中的交易标的
             symbols = config.agent.symbols
@@ -281,23 +301,19 @@ def analysis_node(tools: List):
 技术分析结果:
 {analysis_content}
 
-系统量化护栏（代码已计算，AI 不得改写 position_size_usd、stop_loss_price、take_profit_price、leverage）:
-{json.dumps({symbol: guardrail.to_prompt_dict() for symbol, guardrail in quant_guardrails.items()}, indent=2, ensure_ascii=False)}
-
-你只能输出 regime 分类，不能输出 OPEN/CLOSE/HOLD，不能决定 entry、exit、sizing、risk。
+你只能输出 regime 分类；不能输出交易动作，不能决定入场、退出、仓位、保护价格或风险。
 regime 只能是 TREND、RANGE、BREAKOUT、UNKNOWN。
 如果证据不足、confidence < {config.regime_execution.regime.min_confidence}，或分类不稳定，输出 UNKNOWN。
-expires_at 必须是 Unix 秒级时间戳，不能早于当前时间。"""
+expires_at 必须是 ISO-8601 时间，不能早于当前时间。"""
 
-            # 获取用户交易策略（三层优先级）
-            user_trading_strategy = await get_trading_strategy()
+            regime_prompt = await get_regime_classifier_prompt()
             
             # 根据是否支持原生结构化输出来调整处理
             if supports_native_structured_output():
                 # OpenAI gpt-4o 使用原生结构化输出
                 regime_classification = await structured_llm.ainvoke([
                     SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_trading_strategy)
+                    HumanMessage(content=regime_prompt)
                 ])
             else:
                 # 其他模型使用JSON格式
@@ -307,15 +323,15 @@ expires_at 必须是 Unix 秒级时间戳，不能早于当前时间。"""
                             "symbol": "string",
                             "regime": "TREND|RANGE|BREAKOUT|UNKNOWN",
                             "confidence": "number between 0 and 1",
-                            "expires_at": "Unix timestamp seconds",
-                            "reasoning": "string"
+                            "evidence": ["short_tag"],
+                            "expires_at": "ISO-8601 timestamp"
                         }
                     ],
-                    "overall_summary": "string"
+                    "market_summary": "string"
                 }
                 
                 json_instruction = f"""
-请以JSON格式返回决策，严格按照以下格式：
+请以JSON格式返回 regime 分类，严格按照以下格式：
 
 ```json
 {json.dumps(json_schema, indent=2, ensure_ascii=False)}
@@ -325,27 +341,33 @@ expires_at 必须是 Unix 秒级时间戳，不能早于当前时间。"""
                 
                 response = await structured_llm.ainvoke([
                     SystemMessage(content=system_prompt + json_instruction),
-                    HumanMessage(content=user_trading_strategy)
+                    HumanMessage(content=regime_prompt)
                 ])
                 
                 # 解析JSON响应
-                regime_classification = parse_regime_response(response.content)
+                regime_classification = parse_regime_response(response.content, symbols)
 
             logger.info(f"regime classification: {regime_classification}")
 
-            positions_by_symbol = _positions_by_symbol(positions)
-            symbol_decisions = build_deterministic_symbol_decisions(
-                symbols=symbols,
-                total_balance=balance.total_balance,
-                positions_by_symbol=positions_by_symbol,
-                quant_guardrails=quant_guardrails,
-                regime_indicators=regime_indicators,
-                regime_classification=regime_classification,
-            )
-
             # 更新状态
-            state["symbol_decisions"] = symbol_decisions
             state["overall_summary"] = regime_classification.overall_summary
+            state["regime_classification"] = {
+                item.symbol: {
+                    "regime": item.regime.value,
+                    "confidence": item.confidence,
+                    "evidence": item.evidence,
+                    "expires_at": item.expires_at,
+                }
+                for item in regime_classification.symbol_regimes
+            }
+            state["regime_classification_result"] = regime_classification
+            state["analysis_context"] = {
+                "symbols": symbols,
+                "total_balance": balance.total_balance,
+                "positions_by_symbol": _positions_by_symbol(positions),
+                "quant_guardrails": quant_guardrails,
+                "regime_indicators": regime_indicators,
+            }
 
             logger.info(
                 f"ReAct regime 分析完成: {len(regime_classification.symbol_regimes)} 个标的"
@@ -384,7 +406,7 @@ def build_deterministic_symbol_decisions(
         current_position = positions_by_symbol.get(symbol)
 
         if current_position:
-            decision = SymbolDecision(
+            decision = DeterministicSymbolDecision(
                 symbol=symbol,
                 action="POSITION_HOLD",
                 reasoning=(
@@ -447,8 +469,8 @@ def build_deterministic_symbol_decisions(
 
 
 def _apply_quant_guardrail(
-    decision: SymbolDecision, quant_guardrails: dict, current_position=None
-) -> SymbolDecision:
+    decision: DeterministicSymbolDecision, quant_guardrails: dict, current_position=None
+) -> DeterministicSymbolDecision:
     """Enforce deterministic v2 guardrails over LLM output."""
     guardrail = quant_guardrails.get(decision.symbol)
     if guardrail is None:
@@ -497,8 +519,8 @@ def _apply_quant_guardrail(
 
 
 def _apply_position_exit_guardrail(
-    decision: SymbolDecision, guardrail, current_position
-) -> SymbolDecision:
+    decision: DeterministicSymbolDecision, guardrail, current_position
+) -> DeterministicSymbolDecision:
     """Close existing positions when quantified opposite-side evidence appears."""
     if current_position is None or decision.action in {"CLOSE_LONG", "CLOSE_SHORT"}:
         return decision
@@ -528,7 +550,7 @@ def _apply_position_exit_guardrail(
     return decision
 
 
-def _clear_open_fields(decision: SymbolDecision) -> None:
+def _clear_open_fields(decision: DeterministicSymbolDecision) -> None:
     decision.position_size_usd = 0.0
     decision.stop_loss_price = None
     decision.take_profit_price = None

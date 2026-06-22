@@ -20,10 +20,15 @@ from trading.factory import get_trader
 from trading.position_service import get_position_service
 from agent.portfolio.position_manager import update_position_state
 from services.prompt_service import (
-    get_trading_strategy,
+    PROMPT_CONTRACT_MISMATCH,
+    clear_regime_prompt_cache,
+    get_regime_classifier_prompt,
+    get_regime_prompt_status,
     get_trading_strategy_field_catalog,
-    reset_trading_strategy_to_template,
+    migrate_legacy_trading_strategy_to_archive,
+    reset_regime_prompt_to_template,
     set_trading_strategy,
+    validate_regime_prompt_contract,
     validate_trading_strategy,
 )
 
@@ -269,6 +274,7 @@ class AgentAnalysisResponse(BaseModel):
     symbol_decisions: Dict[str, SymbolDecisionResponse]
     overall_summary: Optional[str] = None
     error: Optional[str] = None
+    strategy_runtime: Optional[Dict[str, Any]] = None
     duration_ms: float
 
 
@@ -281,6 +287,16 @@ async def run_agent_analysis():
         
         # 确保数据库已初始化
         await init_database()
+
+        prompt_status = await get_regime_prompt_status()
+        if not prompt_status.compatible:
+            return AgentAnalysisResponse(
+                symbol_decisions={},
+                overall_summary=prompt_status.message,
+                error=prompt_status.error_code,
+                strategy_runtime=prompt_status.to_dict(),
+                duration_ms=0.0,
+            )
         
         # 创建技术分析工具
         tech_tool = create_tech_analysis_tool()
@@ -323,6 +339,7 @@ async def run_agent_analysis():
             symbol_decisions=symbol_decisions_response,
             overall_summary=result.get("overall_summary"),
             error=result.get("error"),
+            strategy_runtime=result.get("strategy_runtime"),
             duration_ms=duration_ms
         )
         
@@ -335,6 +352,7 @@ async def run_agent_analysis():
             symbol_decisions={},
             overall_summary=f"Agent 分析失败: {str(e)}",
             error=str(e),
+            strategy_runtime=None,
             duration_ms=0.0
         )
 
@@ -417,6 +435,7 @@ class AgentStatusResponse(BaseModel):
     last_run: Optional[str] = None
     next_run: Optional[str] = None
     uptime_seconds: Optional[int] = None
+    strategy_runtime: Optional[Dict[str, Any]] = None
 
 
 # Agent control endpoints
@@ -435,6 +454,14 @@ async def start_agent():
         
         # 确保数据库已初始化
         await init_database()
+
+        prompt_status = await get_regime_prompt_status()
+        if not prompt_status.compatible:
+            return AgentControlResponse(
+                success=False,
+                message=f"{PROMPT_CONTRACT_MISMATCH}: {prompt_status.mismatch_reason}",
+                timestamp=datetime.now(),
+            )
         
         # 启动调度器
         await scheduler.start()
@@ -502,7 +529,8 @@ async def get_agent_status():
             model_name=status["model_name"],
             last_run=status.get("last_run"),
             next_run=status.get("next_run"),
-            uptime_seconds=status.get("uptime_seconds")
+            uptime_seconds=status.get("uptime_seconds"),
+            strategy_runtime=(await get_regime_prompt_status()).to_dict(),
         )
         
     except Exception as e:
@@ -788,11 +816,12 @@ async def sync_trading_history(full_sync: bool = False):
         raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
 
 
-# Trading Strategy API Models
+# Regime prompt API models
 class TradingStrategyResponse(BaseModel):
     strategy: str
     source: str  # "database", "config", or "default"
     validation: Optional[StrategyValidationResponse] = None
+    strategy_runtime: Optional[Dict[str, Any]] = None
 
 class TradingStrategyRequest(BaseModel):
     strategy: str
@@ -803,27 +832,13 @@ class TradingStrategyUpdateResponse(BaseModel):
     timestamp: datetime
     source: Optional[str] = None
     validation: Optional[StrategyValidationResponse] = None
+    strategy_runtime: Optional[Dict[str, Any]] = None
+    archived_legacy: Optional[bool] = None
 
 
 async def _resolve_trading_strategy_source() -> str:
     """Return the currently effective trading-strategy source."""
-    from database.database import get_session_maker
-    from database.models import SystemConfig
-    from sqlalchemy import select
-
-    try:
-        async with get_session_maker()() as session:
-            result = await session.execute(
-                select(SystemConfig).where(SystemConfig.key == "trading_strategy")
-            )
-            config_row = result.scalar_one_or_none()
-
-            if config_row and config_row.value.strip():
-                return "database"
-    except Exception:
-        logger.warning("无法解析数据库策略来源，将报告 template")
-
-    return "template"
+    return (await get_regime_prompt_status()).source
 
 
 def _build_strategy_validation_response(strategy: str) -> StrategyValidationResponse:
@@ -836,7 +851,17 @@ def _build_strategy_validation_response(strategy: str) -> StrategyValidationResp
     )
 
 
-# Trading Strategy Endpoints
+def _build_prompt_contract_validation_response(strategy: str) -> StrategyValidationResponse:
+    validation = validate_regime_prompt_contract(strategy)
+    return StrategyValidationResponse(
+        valid=validation.valid,
+        referenced_fields=[],
+        unknown_fields=[] if validation.valid else [validation.reason or "invalid"],
+        catalog={},
+    )
+
+
+# Regime prompt endpoints
 @router.get("/trading/strategy/schema")
 async def get_trading_strategy_schema():
     """Return the backend field catalog strategies are allowed to reference."""
@@ -845,22 +870,29 @@ async def get_trading_strategy_schema():
 
 @router.post("/trading/strategy/validate", response_model=StrategyValidationResponse)
 async def validate_trading_strategy_request(request: TradingStrategyRequest):
-    """Validate explicit backend-field placeholders inside a strategy body."""
-    return _build_strategy_validation_response(request.strategy or "")
+    """Validate the regime classifier prompt contract."""
+    return _build_prompt_contract_validation_response(request.strategy or "")
+
+
+@router.get("/trading/strategy/status")
+async def get_trading_strategy_status():
+    """Return regime prompt/runtime contract status."""
+    return (await get_regime_prompt_status()).to_dict()
 
 
 @router.get("/trading/strategy", response_model=TradingStrategyResponse)
 async def get_current_trading_strategy():
-    """获取当前交易策略配置"""
+    """获取当前 regime classifier prompt 配置"""
     try:
-        strategy = await get_trading_strategy()
-        source = await _resolve_trading_strategy_source()
-        validation = _build_strategy_validation_response(strategy)
+        strategy = await get_regime_classifier_prompt()
+        status = await get_regime_prompt_status()
+        validation = _build_prompt_contract_validation_response(strategy)
 
         return TradingStrategyResponse(
             strategy=strategy,
-            source=source,
+            source=status.source,
             validation=validation,
+            strategy_runtime=status.to_dict(),
         )
         
     except Exception as e:
@@ -875,12 +907,12 @@ async def update_trading_strategy(request: TradingStrategyRequest):
         if not request.strategy or not request.strategy.strip():
             raise HTTPException(status_code=400, detail="交易策略内容不能为空")
 
-        validation = _build_strategy_validation_response(request.strategy.strip())
+        validation = _build_prompt_contract_validation_response(request.strategy.strip())
         if not validation.valid:
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "message": "交易策略引用了未注册的后端字段",
+                    "message": "regime classifier prompt 不符合运行时合约",
                     "unknown_fields": validation.unknown_fields,
                 },
             )
@@ -895,6 +927,7 @@ async def update_trading_strategy(request: TradingStrategyRequest):
                 timestamp=datetime.now(),
                 source="database",
                 validation=validation,
+                strategy_runtime=(await get_regime_prompt_status()).to_dict(),
             )
         else:
             raise HTTPException(status_code=500, detail="更新交易策略失败")
@@ -908,17 +941,19 @@ async def update_trading_strategy(request: TradingStrategyRequest):
 
 @router.delete("/trading/strategy", response_model=TradingStrategyUpdateResponse)
 async def reset_trading_strategy():
-    """重置交易策略为仓库模板，并写回数据库运行时策略。"""
+    """重置 regime classifier prompt 为仓库模板，并写回数据库。"""
     try:
-        strategy = await reset_trading_strategy_to_template()
+        strategy = await reset_regime_prompt_to_template()
+        status = await get_regime_prompt_status()
 
-        logger.info("交易策略已重置为模板并写入数据库")
+        logger.info("regime classifier prompt 已重置为模板并写入数据库")
         return TradingStrategyUpdateResponse(
             success=True,
-            message="交易策略已重置为模板",
+            message="regime classifier prompt 已重置为模板",
             timestamp=datetime.now(),
             source="database",
-            validation=_build_strategy_validation_response(strategy),
+            validation=_build_prompt_contract_validation_response(strategy),
+            strategy_runtime=status.to_dict(),
         )
         
     except Exception as e:
@@ -928,24 +963,44 @@ async def reset_trading_strategy():
 
 @router.post("/trading/strategy/refresh", response_model=TradingStrategyUpdateResponse)
 async def refresh_trading_strategy():
-    """Reload config values and clear the in-memory runtime-strategy cache."""
+    """Reload config values and clear the in-memory regime prompt cache."""
     try:
         reload_config()
+        clear_regime_prompt_cache()
+        status = await get_regime_prompt_status()
 
-        from services.prompt_service import clear_strategy_cache
-
-        clear_strategy_cache()
-        strategy = await get_trading_strategy()
-        source = await _resolve_trading_strategy_source()
-
-        logger.info("交易策略缓存已刷新")
+        logger.info("regime prompt 缓存已刷新")
         return TradingStrategyUpdateResponse(
-            success=True,
-            message="交易策略缓存已刷新",
+            success=status.compatible,
+            message=status.message or "regime prompt 缓存已刷新",
             timestamp=datetime.now(),
-            source=source,
-            validation=_build_strategy_validation_response(strategy),
+            source=status.source,
+            validation=None,
+            strategy_runtime=status.to_dict(),
         )
     except Exception as e:
         logger.error(f"刷新交易策略失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新交易策略失败: {str(e)}")
+
+
+@router.post("/trading/strategy/reset-to-template", response_model=TradingStrategyUpdateResponse)
+async def reset_regime_strategy_prompt():
+    return await reset_trading_strategy()
+
+
+@router.post("/trading/strategy/archive-legacy", response_model=TradingStrategyUpdateResponse)
+async def archive_legacy_trading_strategy():
+    try:
+        archived = await migrate_legacy_trading_strategy_to_archive()
+        status = await get_regime_prompt_status()
+        return TradingStrategyUpdateResponse(
+            success=True,
+            message="legacy trading_strategy archived" if archived else "no legacy trading_strategy to archive",
+            timestamp=datetime.now(),
+            source=status.source,
+            strategy_runtime=status.to_dict(),
+            archived_legacy=archived,
+        )
+    except Exception as e:
+        logger.error(f"归档旧交易策略失败: {e}")
+        raise HTTPException(status_code=500, detail=f"归档旧交易策略失败: {str(e)}")

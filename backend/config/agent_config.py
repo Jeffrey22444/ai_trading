@@ -59,7 +59,7 @@ class AgentConfig(BaseModel):
     decision_interval: int
     symbols: list[str]
     timeframes: list[str]
-    trading_strategy_template_path: Optional[str] = None
+    regime_classifier_prompt_template_path: Optional[str] = None
 
 
 class ExchangeConfig(BaseModel):

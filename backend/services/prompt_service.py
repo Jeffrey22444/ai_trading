@@ -1,13 +1,20 @@
-"""
-提示词管理服务 - 数据库为运行时策略源，文件模板用于初始化和重置
-"""
+"""Runtime prompt service for the deterministic regime architecture."""
+
+from __future__ import annotations
+
+import hashlib
+import json
 import logging
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
+
+import yaml
 from sqlalchemy import select
+
+from config.settings import config
 from database.database import get_session_maker
 from database.models import SystemConfig
-from config.settings import config
 from services.strategy_contract import (
     StrategyValidationResult,
     get_strategy_field_catalog,
@@ -16,174 +23,457 @@ from services.strategy_contract import (
 
 logger = logging.getLogger("AlphaTransformer")
 
-TRADING_STRATEGY_KEY = "trading_strategy"
-DEFAULT_TEMPLATE_PATH = "backend/config/trading_strategy.md"
+REGIME_PROMPT_KEY = "regime_classifier_prompt"
+REGIME_PROMPT_VERSION_KEY = "regime_classifier_prompt_version"
+REGIME_PROMPT_HASH_KEY = "regime_classifier_prompt_hash"
+STRATEGY_ARCHITECTURE_VERSION_KEY = "strategy_architecture_version"
+STRATEGY_CONTRACT_HASH_KEY = "strategy_contract_hash"
+LEGACY_TRADING_STRATEGY_KEY = "trading_strategy"
+LEGACY_TRADING_STRATEGY_ARCHIVE_KEY = "legacy_trading_strategy_archive"
+PROMPT_CONTRACT_MISMATCH = "PROMPT_CONTRACT_MISMATCH"
 
-# 缓存配置
+CONTRACT_PATH = "backend/config/strategy_contract.yaml"
+DEFAULT_REGIME_TEMPLATE_PATH = "backend/config/regime_classifier_prompt.md"
+
+_prompt_cache: Optional[str] = None
+_prompt_cache_hash: Optional[str] = None
+
+# Backward-compatible test-visible names.
 _strategy_cache: Optional[str] = None
 _cache_valid = False
 
+LEGACY_PROMPT_TERMS = {
+    "D1-D5",
+    "Kelly",
+    "position_size_usd",
+    "stop_loss_price",
+    "take_profit_price",
+    "leverage",
+    "direction_bias",
+    "action_allowed",
+    "OPEN_LONG",
+    "OPEN_SHORT",
+    "CLOSE_LONG",
+    "CLOSE_SHORT",
+    "ENTRY_HOLD",
+    "POSITION_HOLD",
+}
 
-def get_trading_strategy_template_path() -> Path:
-    """Return the repository-local strategy template path."""
+TRADE_OUTPUT_FIELDS = {
+    "action",
+    "position_size_usd",
+    "stop_loss_price",
+    "take_profit_price",
+    "leverage",
+    "setup",
+    "lifecycle",
+    "exit",
+    "risk_budget",
+}
+
+
+@dataclass(frozen=True)
+class PromptValidationResult:
+    valid: bool
+    reason: Optional[str] = None
+    frontmatter: Optional[dict] = None
+
+
+@dataclass(frozen=True)
+class RegimePromptStatus:
+    ok: bool
+    compatible: bool
+    error_code: Optional[str]
+    architecture_mode: str
+    architecture_version: str
+    prompt_role: str
+    expected_prompt_version: str
+    active_prompt_version: str
+    template_prompt_version: str
+    output_schema_version: str
+    source: str
+    active_hash: str
+    template_hash: str
+    contract_hash: str
+    legacy_trading_strategy_present: bool
+    mismatch_reason: Optional[str] = None
+    message: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["prompt_version"] = self.active_prompt_version
+        data["prompt_source"] = self.source
+        data["prompt_hash"] = self.active_hash
+        return data
+
+
+def _repo_path(relative_or_absolute: str) -> Path:
+    path = Path(relative_or_absolute)
+    if path.is_absolute():
+        return path
+    return Path(__file__).resolve().parents[2] / path
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _canonical_hash(value: dict) -> str:
+    return _sha256(json.dumps(value, sort_keys=True, separators=(",", ":")))
+
+
+def load_strategy_contract(path: str = CONTRACT_PATH) -> dict:
+    contract_path = _repo_path(path)
+    if not contract_path.exists():
+        raise FileNotFoundError(f"strategy contract missing: {contract_path}")
+    contract = yaml.safe_load(contract_path.read_text(encoding="utf-8")) or {}
+    if contract.get("architecture", {}).get("mode") != "regime_deterministic":
+        raise ValueError("strategy contract mode must be regime_deterministic")
+    prompt = contract.get("prompt") or {}
+    if prompt.get("role") != "REGIME_CLASSIFIER_ONLY":
+        raise ValueError("prompt.role must be REGIME_CLASSIFIER_ONLY")
+    template_path = prompt.get("template_path")
+    if not template_path or not _repo_path(template_path).exists():
+        raise ValueError("prompt.template_path must point to an existing file")
+    return contract
+
+
+def get_regime_prompt_template_path() -> Path:
     configured_path = (
-        getattr(config.agent, "trading_strategy_template_path", None)
-        or DEFAULT_TEMPLATE_PATH
+        getattr(config.agent, "regime_classifier_prompt_template_path", None)
+        or load_strategy_contract()["prompt"]["template_path"]
+        or DEFAULT_REGIME_TEMPLATE_PATH
     )
-    path = Path(configured_path)
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parents[2] / path
-    return path
+    return _repo_path(configured_path)
 
 
-def get_trading_strategy_template() -> str:
-    """Load the versioned default strategy template."""
-    path = get_trading_strategy_template_path()
-    if not path.exists():
-        raise FileNotFoundError(f"交易策略模板不存在: {path}")
-    strategy = path.read_text(encoding="utf-8").strip()
-    if not strategy:
-        raise ValueError(f"交易策略模板为空: {path}")
-    return strategy
+def get_regime_prompt_template() -> str:
+    path = get_regime_prompt_template_path()
+    prompt = path.read_text(encoding="utf-8").strip()
+    result = validate_regime_prompt_contract(prompt)
+    if not result.valid:
+        raise ValueError(f"regime prompt template invalid: {result.reason}")
+    return prompt
 
 
-async def _get_strategy_row(session):
-    result = await session.execute(
-        select(SystemConfig).where(SystemConfig.key == TRADING_STRATEGY_KEY)
-    )
+def _parse_frontmatter(prompt: str) -> tuple[dict, str]:
+    if not prompt.startswith("---\n"):
+        return {}, prompt
+    end = prompt.find("\n---", 4)
+    if end == -1:
+        return {}, prompt
+    frontmatter = yaml.safe_load(prompt[4:end]) or {}
+    body = prompt[end + 4 :].strip()
+    return frontmatter, body
+
+
+def validate_regime_prompt_contract(prompt: str) -> PromptValidationResult:
+    try:
+        contract = load_strategy_contract()
+    except Exception as exc:
+        return PromptValidationResult(False, str(exc))
+
+    frontmatter, body = _parse_frontmatter(prompt.strip())
+    if not frontmatter:
+        return PromptValidationResult(False, "missing prompt frontmatter", frontmatter)
+
+    expected = {
+        "architecture_mode": contract["architecture"]["mode"],
+        "architecture_version": contract["architecture"]["version"],
+        "prompt_role": contract["prompt"]["role"],
+        "prompt_version": contract["prompt"]["version"],
+        "output_schema_version": contract["prompt"]["output_schema_version"],
+    }
+    for key, value in expected.items():
+        if frontmatter.get(key) != value:
+            return PromptValidationResult(
+                False, f"{key} mismatch: expected {value}", frontmatter
+            )
+
+    if contract.get("validation", {}).get("reject_legacy_prompt_terms", True):
+        found = sorted(term for term in LEGACY_PROMPT_TERMS if term in body)
+        if found:
+            return PromptValidationResult(
+                False, f"legacy prompt terms present: {', '.join(found)}", frontmatter
+            )
+    return PromptValidationResult(True, frontmatter=frontmatter)
+
+
+def reject_trade_action_fields(payload: object) -> bool:
+    if isinstance(payload, dict):
+        if TRADE_OUTPUT_FIELDS.intersection(payload):
+            return True
+        return any(reject_trade_action_fields(value) for value in payload.values())
+    if isinstance(payload, list):
+        return any(reject_trade_action_fields(item) for item in payload)
+    return False
+
+
+async def _get_config_row(session, key: str):
+    result = await session.execute(select(SystemConfig).where(SystemConfig.key == key))
     return result.scalar_one_or_none()
 
 
-async def seed_trading_strategy_from_template() -> str:
-    """Ensure the database has the runtime strategy, seeded from the template."""
-    strategy = get_trading_strategy_template()
+async def _upsert_config(session, key: str, value: str, description: str) -> None:
+    row = await _get_config_row(session, key)
+    if row:
+        row.value = value
+        row.description = description
+    else:
+        session.add(SystemConfig(key=key, value=value, description=description))
+
+
+def _template_status_fields() -> tuple[dict, str, str, str]:
+    contract = load_strategy_contract()
+    template = get_regime_prompt_template()
+    return contract, template, _sha256(template), _canonical_hash(contract)
+
+
+async def _legacy_present(session) -> bool:
+    legacy = await _get_config_row(session, LEGACY_TRADING_STRATEGY_KEY)
+    return bool(legacy and legacy.value.strip())
+
+
+async def get_regime_prompt_status() -> RegimePromptStatus:
+    contract, template, template_hash, contract_hash = _template_status_fields()
+    prompt = contract["prompt"]
+    architecture = contract["architecture"]
+    runtime = contract["runtime"]
+
     async with get_session_maker()() as session:
-        config_row = await _get_strategy_row(session)
-        if config_row and config_row.value.strip():
-            return config_row.value.strip()
+        legacy_present = await _legacy_present(session)
+        db_row = await _get_config_row(session, runtime["db_prompt_key"])
+        active = db_row.value.strip() if db_row and db_row.value.strip() else ""
 
-        if config_row:
-            config_row.value = strategy
-            config_row.description = "Runtime trading strategy seeded from template"
-        else:
-            session.add(
-                SystemConfig(
-                    key=TRADING_STRATEGY_KEY,
-                    value=strategy,
-                    description="Runtime trading strategy seeded from template",
+        if active:
+            active_hash = _sha256(active)
+            validation = validate_regime_prompt_contract(active)
+            active_version = (
+                validation.frontmatter or {}
+            ).get("prompt_version", "unknown_or_legacy")
+            if validation.valid:
+                return RegimePromptStatus(
+                    ok=True,
+                    compatible=True,
+                    error_code=None,
+                    architecture_mode=architecture["mode"],
+                    architecture_version=architecture["version"],
+                    prompt_role=prompt["role"],
+                    expected_prompt_version=prompt["version"],
+                    active_prompt_version=active_version,
+                    template_prompt_version=prompt["version"],
+                    output_schema_version=prompt["output_schema_version"],
+                    source="database",
+                    active_hash=active_hash,
+                    template_hash=template_hash,
+                    contract_hash=contract_hash,
+                    legacy_trading_strategy_present=legacy_present,
                 )
+            return _mismatch_status(
+                contract,
+                source="database",
+                active_hash=active_hash,
+                template_hash=template_hash,
+                contract_hash=contract_hash,
+                legacy_present=legacy_present,
+                reason=validation.reason or "database regime prompt is incompatible",
+                active_version=active_version,
             )
-        await session.commit()
-    return strategy
 
-
-async def reset_trading_strategy_to_template() -> str:
-    """Replace the runtime database strategy with the versioned template."""
-    strategy = get_trading_strategy_template()
-    async with get_session_maker()() as session:
-        config_row = await _get_strategy_row(session)
-        if config_row:
-            config_row.value = strategy
-            config_row.description = "Runtime trading strategy reset from template"
-        else:
-            session.add(
-                SystemConfig(
-                    key=TRADING_STRATEGY_KEY,
-                    value=strategy,
-                    description="Runtime trading strategy reset from template",
-                )
+        if legacy_present and runtime.get("migration_policy") == "BLOCK_ON_MISMATCH":
+            return _mismatch_status(
+                contract,
+                source="mismatch",
+                active_hash="",
+                template_hash=template_hash,
+                contract_hash=contract_hash,
+                legacy_present=True,
+                reason="legacy trading_strategy exists without compatible regime prompt",
+                active_version="unknown_or_legacy",
             )
-        await session.commit()
 
-    clear_strategy_cache()
-    return strategy
+        return RegimePromptStatus(
+            ok=True,
+            compatible=True,
+            error_code=None,
+            architecture_mode=architecture["mode"],
+            architecture_version=architecture["version"],
+            prompt_role=prompt["role"],
+            expected_prompt_version=prompt["version"],
+            active_prompt_version=prompt["version"],
+            template_prompt_version=prompt["version"],
+            output_schema_version=prompt["output_schema_version"],
+            source="template",
+            active_hash=template_hash,
+            template_hash=template_hash,
+            contract_hash=contract_hash,
+            legacy_trading_strategy_present=False,
+        )
 
-async def get_trading_strategy() -> str:
-    """
-    获取运行时交易策略。数据库是唯一生效来源，缺失时用模板初始化。
-    """
-    global _strategy_cache, _cache_valid
-    
-    # 先检查缓存
-    if _cache_valid and _strategy_cache is not None:
-        return _strategy_cache
-    
-    try:
+
+def _mismatch_status(
+    contract: dict,
+    *,
+    source: str,
+    active_hash: str,
+    template_hash: str,
+    contract_hash: str,
+    legacy_present: bool,
+    reason: str,
+    active_version: str,
+) -> RegimePromptStatus:
+    return RegimePromptStatus(
+        ok=False,
+        compatible=False,
+        error_code=PROMPT_CONTRACT_MISMATCH,
+        architecture_mode=contract["architecture"]["mode"],
+        architecture_version=contract["architecture"]["version"],
+        prompt_role=contract["prompt"]["role"],
+        expected_prompt_version=contract["prompt"]["version"],
+        active_prompt_version=active_version,
+        template_prompt_version=contract["prompt"]["version"],
+        output_schema_version=contract["prompt"]["output_schema_version"],
+        source=source,
+        active_hash=active_hash,
+        template_hash=template_hash,
+        contract_hash=contract_hash,
+        legacy_trading_strategy_present=legacy_present,
+        mismatch_reason=reason,
+        message="Runtime database prompt is incompatible with deterministic regime architecture.",
+    )
+
+
+async def get_regime_classifier_prompt() -> str:
+    global _prompt_cache, _prompt_cache_hash, _strategy_cache, _cache_valid
+
+    status = await get_regime_prompt_status()
+    if not status.compatible:
+        raise RuntimeError(PROMPT_CONTRACT_MISMATCH)
+
+    if status.source == "database":
         async with get_session_maker()() as session:
-            config_row = await _get_strategy_row(session)
-            
-            if config_row and config_row.value.strip():
-                logger.info("使用数据库中的运行时交易策略")
-                _strategy_cache = config_row.value.strip()
-                _cache_valid = True
-                return _strategy_cache
-    
-    except Exception as e:
-        logger.warning(f"读取数据库交易策略失败，将尝试模板初始化: {e}")
-    
-    logger.info("数据库交易策略缺失，使用模板初始化运行时策略")
-    _strategy_cache = await seed_trading_strategy_from_template()
+            row = await _get_config_row(session, REGIME_PROMPT_KEY)
+            prompt = row.value.strip()
+    else:
+        prompt = await reset_regime_prompt_to_template()
+
+    prompt_hash = _sha256(prompt)
+    if _prompt_cache and _prompt_cache_hash == prompt_hash:
+        return _prompt_cache
+
+    _prompt_cache = prompt
+    _prompt_cache_hash = prompt_hash
+    _strategy_cache = prompt
     _cache_valid = True
-    return _strategy_cache
+    return prompt
+
+
+async def reset_regime_prompt_to_template() -> str:
+    prompt = get_regime_prompt_template()
+    contract = load_strategy_contract()
+    prompt_hash = _sha256(prompt)
+    contract_hash = _canonical_hash(contract)
+    async with get_session_maker()() as session:
+        await _upsert_config(
+            session,
+            REGIME_PROMPT_KEY,
+            prompt,
+            "Runtime regime classifier prompt reset from template",
+        )
+        await _upsert_config(
+            session,
+            REGIME_PROMPT_VERSION_KEY,
+            contract["prompt"]["version"],
+            "Runtime regime classifier prompt version",
+        )
+        await _upsert_config(
+            session,
+            REGIME_PROMPT_HASH_KEY,
+            prompt_hash,
+            "Runtime regime classifier prompt hash",
+        )
+        await _upsert_config(
+            session,
+            STRATEGY_ARCHITECTURE_VERSION_KEY,
+            contract["architecture"]["version"],
+            "Deterministic strategy architecture version",
+        )
+        await _upsert_config(
+            session,
+            STRATEGY_CONTRACT_HASH_KEY,
+            contract_hash,
+            "Deterministic strategy contract hash",
+        )
+        await session.commit()
+    clear_regime_prompt_cache()
+    return prompt
+
+
+async def migrate_legacy_trading_strategy_to_archive() -> bool:
+    async with get_session_maker()() as session:
+        legacy = await _get_config_row(session, LEGACY_TRADING_STRATEGY_KEY)
+        if not legacy or not legacy.value.strip():
+            return False
+        archive = await _get_config_row(session, LEGACY_TRADING_STRATEGY_ARCHIVE_KEY)
+        archived = json.dumps(
+            {"archived_at": "runtime", "strategy": legacy.value}, ensure_ascii=False
+        )
+        if archive:
+            archive.value = archived
+            archive.description = "Archived legacy trading strategy prompt"
+        else:
+            session.add(
+                SystemConfig(
+                    key=LEGACY_TRADING_STRATEGY_ARCHIVE_KEY,
+                    value=archived,
+                    description="Archived legacy trading strategy prompt",
+                )
+            )
+        legacy.value = ""
+        legacy.description = "Deprecated legacy prompt archived"
+        await session.commit()
+    clear_regime_prompt_cache()
+    return True
+
+
+def clear_regime_prompt_cache() -> None:
+    global _prompt_cache, _prompt_cache_hash, _strategy_cache, _cache_valid
+    _prompt_cache = None
+    _prompt_cache_hash = None
+    _strategy_cache = None
+    _cache_valid = False
+    logger.info("regime prompt cache cleared")
+
 
 async def set_trading_strategy(strategy: str) -> bool:
-    """
-    设置用户自定义的交易策略（存储到数据库）
-    """
-    global _strategy_cache, _cache_valid
-    
-    try:
-        if not strategy or not strategy.strip():
-            raise ValueError("交易策略内容不能为空")
-        
-        strategy = strategy.strip()
-        
-        async with get_session_maker()() as session:
-            # 查找现有配置
-            result = await session.execute(
-                select(SystemConfig).where(SystemConfig.key == TRADING_STRATEGY_KEY)
-            )
-            config_row = result.scalar_one_or_none()
-            
-            if config_row:
-                # 更新现有配置
-                config_row.value = strategy
-                logger.info("更新数据库中的交易策略配置")
-            else:
-                # 创建新配置
-                new_config = SystemConfig(
-                    key="trading_strategy",
-                    value=strategy,
-                    description="用户自定义的运行时交易策略配置"
-                )
-                session.add(new_config)
-                logger.info("创建新的交易策略配置")
-            
-            await session.commit()
-            
-            # 清除缓存，强制下次重新读取
-            _strategy_cache = None
-            _cache_valid = False
-            
-            return True
-            
-    except Exception as e:
-        logger.error(f"设置交易策略失败: {e}")
+    if not validate_regime_prompt_contract(strategy).valid:
         return False
+    async with get_session_maker()() as session:
+        await _upsert_config(
+            session,
+            REGIME_PROMPT_KEY,
+            strategy.strip(),
+            "User supplied runtime regime classifier prompt",
+        )
+        await _upsert_config(
+            session,
+            REGIME_PROMPT_HASH_KEY,
+            _sha256(strategy.strip()),
+            "Runtime regime classifier prompt hash",
+        )
+        await session.commit()
+    clear_regime_prompt_cache()
+    return True
 
 
 def validate_trading_strategy(strategy: str) -> StrategyValidationResult:
-    """Validate explicit backend-field references inside a strategy body."""
+    """Legacy field-reference validator kept for existing schema endpoint."""
     return validate_strategy_field_references(strategy, list(config.agent.timeframes))
 
 
 def get_trading_strategy_field_catalog() -> dict:
-    """Return the field catalog the strategy is allowed to reference."""
     return get_strategy_field_catalog(list(config.agent.timeframes))
 
-def clear_strategy_cache():
-    """清除策略缓存（用于测试或强制刷新）"""
-    global _strategy_cache, _cache_valid
-    _strategy_cache = None
-    _cache_valid = False
-    logger.info("交易策略缓存已清除")
+
+def clear_strategy_cache() -> None:
+    clear_regime_prompt_cache()

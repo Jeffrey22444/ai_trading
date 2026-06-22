@@ -300,10 +300,25 @@ export async function stopAgent(): Promise<AgentControlResponse> {
   return apiRequest<AgentControlResponse>('/agent/stop', { method: 'POST' });
 }
 
-// Trading Strategy API types
+// Regime classifier prompt API types
+export interface StrategyRuntimeStatus {
+  compatible: boolean;
+  architecture_mode: string;
+  architecture_version: string;
+  prompt_role: string;
+  prompt_version?: string;
+  active_prompt_version?: string;
+  prompt_source?: string;
+  source: string;
+  prompt_hash?: string;
+  active_hash?: string;
+  mismatch_reason?: string | null;
+}
+
 interface TradingStrategyResponse {
   strategy: string;
   source?: string;
+  strategy_runtime?: StrategyRuntimeStatus;
 }
 
 interface TradingStrategyUpdateResponse {
@@ -311,9 +326,10 @@ interface TradingStrategyUpdateResponse {
   message: string;
   timestamp: string;
   source?: string;
+  strategy_runtime?: StrategyRuntimeStatus;
 }
 
-// Trading Strategy API functions
+// Regime classifier prompt API functions
 export async function fetchTradingStrategy(): Promise<TradingStrategyResponse> {
   return apiRequest<TradingStrategyResponse>('/trading/strategy');
 }

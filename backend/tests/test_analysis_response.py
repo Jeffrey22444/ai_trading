@@ -2,12 +2,11 @@ import time
 from datetime import datetime
 
 from agent.nodes.analysis_node import (
+    DeterministicSymbolDecision,
     RegimeClassification,
-    SymbolDecision,
     SymbolRegimeDecision,
     _apply_quant_guardrail,
     build_deterministic_symbol_decisions,
-    parse_json_response,
     parse_regime_response,
 )
 from agent.regime.models import IndicatorSet, Regime
@@ -21,56 +20,6 @@ from agent.quant.models import (
     StopSide,
 )
 from trading.interface import Position
-
-
-def test_hold_decision_accepts_null_optional_trade_fields():
-    decision = parse_json_response(
-        """
-        {
-          "symbol_decisions": [
-            {
-              "symbol": "BTC",
-              "action": "HOLD",
-              "reasoning": "Signals conflict, wait.",
-              "position_size_usd": null,
-              "stop_loss_price": null,
-              "take_profit_price": null
-            }
-          ],
-          "overall_summary": "Wait for confirmation."
-        }
-        """
-    )
-
-    btc = decision.symbol_decisions[0]
-    assert btc.action == "HOLD"
-    assert btc.reasoning == "Signals conflict, wait."
-    assert btc.position_size_usd == 0.0
-
-
-def test_open_decision_accepts_quant_leverage_field():
-    decision = parse_json_response(
-        """
-        {
-          "symbol_decisions": [
-            {
-              "symbol": "BTC",
-              "action": "OPEN_LONG",
-              "reasoning": "Quant guardrail allows long.",
-              "position_size_usd": 120,
-              "stop_loss_price": 95,
-              "take_profit_price": 130,
-              "leverage": 3
-            }
-          ],
-          "overall_summary": "BTC has enough quantified edge."
-        }
-        """
-    )
-
-    btc = decision.symbol_decisions[0]
-    assert btc.action == "OPEN_LONG"
-    assert btc.leverage == 3
 
 
 def _guardrail(long_score=6.0, short_score=4.0, action_allowed=False):
@@ -162,7 +111,7 @@ def _regime_indicators(**overrides):
 
 
 def test_existing_short_is_closed_when_opposing_long_score_emerges_even_if_opening_blocked():
-    decision = SymbolDecision(
+    decision = DeterministicSymbolDecision(
         symbol="BTC",
         action="HOLD",
         reasoning="LONG bias exists, but action_allowed=false.",
@@ -182,7 +131,7 @@ def test_existing_short_is_closed_when_opposing_long_score_emerges_even_if_openi
 
 
 def test_existing_long_is_closed_when_opposing_short_score_emerges_even_if_opening_blocked():
-    decision = SymbolDecision(
+    decision = DeterministicSymbolDecision(
         symbol="BTC",
         action="HOLD",
         reasoning="SHORT bias exists, but action_allowed=false.",
@@ -198,7 +147,7 @@ def test_existing_long_is_closed_when_opposing_short_score_emerges_even_if_openi
 
 
 def test_existing_short_is_not_closed_when_opposing_score_is_below_exit_threshold():
-    decision = SymbolDecision(
+    decision = DeterministicSymbolDecision(
         symbol="BTC",
         action="HOLD",
         reasoning="Long score is still too weak.",
@@ -217,6 +166,52 @@ def test_regime_parse_failure_degrades_to_unknown_only():
     result = parse_regime_response("not json")
 
     assert all(item.regime == Regime.UNKNOWN for item in result.symbol_regimes)
+
+
+def test_regime_parse_rejects_trade_action_fields():
+    result = parse_regime_response(
+        """
+        {
+          "symbol_regimes": [
+            {
+              "symbol": "BTC",
+              "regime": "TREND",
+              "confidence": 0.95,
+              "evidence": ["trend"],
+              "expires_at": "2099-01-01T00:00:00Z",
+              "position_size_usd": 100
+            }
+          ],
+          "market_summary": "contains forbidden field"
+        }
+        """,
+        required_symbols=["BTC"],
+    )
+
+    assert result.symbol_regimes[0].regime == Regime.UNKNOWN
+
+
+def test_regime_parse_adds_missing_symbol_as_unknown():
+    result = parse_regime_response(
+        """
+        {
+          "symbol_regimes": [
+            {
+              "symbol": "BTC",
+              "regime": "TREND",
+              "confidence": 0.95,
+              "evidence": ["trend"],
+              "expires_at": "2099-01-01T00:00:00Z"
+            }
+          ],
+          "market_summary": "one symbol"
+        }
+        """,
+        required_symbols=["BTC", "ETH"],
+    )
+
+    assert result.symbol_regimes[1].symbol == "ETH"
+    assert result.symbol_regimes[1].regime == Regime.UNKNOWN
 
 
 def test_unknown_regime_blocks_new_entry_even_when_guardrail_allows_open():

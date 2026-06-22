@@ -1,0 +1,21 @@
+architecture:
+  mode: "regime_deterministic"
+  version: "regime_deterministic_v1"
+
+prompt:
+  role: "REGIME_CLASSIFIER_ONLY"
+  template_path: "backend/config/regime_classifier_prompt.md"
+  version: "regime_classifier_prompt_v1"
+  output_schema_version: "regime_output_v1"
+
+runtime:
+  db_prompt_key: "regime_classifier_prompt"
+  db_prompt_version_key: "regime_classifier_prompt_version"
+  db_prompt_hash_key: "regime_classifier_prompt_hash"
+  legacy_prompt_key: "trading_strategy"
+  migration_policy: "BLOCK_ON_MISMATCH"
+
+validation:
+  min_confidence: 0.60
+  reject_trade_action_fields: true
+  reject_legacy_prompt_terms: true

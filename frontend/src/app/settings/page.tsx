@@ -11,7 +11,7 @@ import {
   startAgent,
   stopAgent,
 } from "@/lib/api";
-import type { AgentStatus } from "@/lib/api";
+import type { AgentStatus, StrategyRuntimeStatus } from "@/lib/api";
 import Toast from "@/components/Toast";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
@@ -19,6 +19,7 @@ import Header from "@/components/Header";
 export default function SettingsPage() {
   const [strategy, setStrategy] = useState("");
   const [strategySource, setStrategySource] = useState<string | null>(null);
+  const [strategyRuntime, setStrategyRuntime] = useState<StrategyRuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -54,8 +55,9 @@ export default function SettingsPage() {
       const data = await fetchTradingStrategy();
       setStrategy(data.strategy);
       setStrategySource(data.source ?? null);
+      setStrategyRuntime(data.strategy_runtime ?? null);
     } catch (error) {
-      setMessage({ type: "error", text: "Failed to load trading strategy" });
+      setMessage({ type: "error", text: "Failed to load regime classifier prompt" });
     } finally {
       setLoading(false);
     }
@@ -105,10 +107,11 @@ export default function SettingsPage() {
 
       const response = await updateTradingStrategy(strategy);
       setStrategySource(response.source ?? "database");
+      setStrategyRuntime(response.strategy_runtime ?? null);
 
       setMessage({
         type: "success",
-        text: "Runtime trading strategy saved to database",
+        text: "Regime classifier prompt saved to database",
       });
     } catch (error) {
       setMessage({
@@ -116,7 +119,7 @@ export default function SettingsPage() {
         text:
           error instanceof Error
             ? error.message
-            : "Failed to update trading strategy",
+            : "Failed to update regime classifier prompt",
       });
     } finally {
       setSaving(false);
@@ -130,11 +133,12 @@ export default function SettingsPage() {
 
       const response = await resetTradingStrategy();
       setStrategySource(response.source ?? "database");
-      await loadStrategy(); // Reload to get default strategy
+      setStrategyRuntime(response.strategy_runtime ?? null);
+      await loadStrategy(); // Reload to get default prompt
 
       setMessage({
         type: "success",
-        text: "Runtime strategy reset from template",
+        text: "Runtime prompt reset from repository template",
       });
     } catch (error) {
       setMessage({
@@ -142,7 +146,7 @@ export default function SettingsPage() {
         text:
           error instanceof Error
             ? error.message
-            : "Failed to reset trading strategy",
+            : "Failed to reset regime classifier prompt",
       });
     } finally {
       setResetting(false);
@@ -156,13 +160,14 @@ export default function SettingsPage() {
 
       const response = await refreshTradingStrategy();
       setStrategySource(response.source ?? null);
+      setStrategyRuntime(response.strategy_runtime ?? null);
       await loadStrategy();
 
       setMessage({
         type: "success",
         text: response.source
-          ? `Trading strategy cache refreshed (${response.source})`
-          : "Trading strategy cache refreshed",
+          ? `Regime prompt cache refreshed (${response.source})`
+          : "Regime prompt cache refreshed",
       });
     } catch (error) {
       setMessage({
@@ -170,7 +175,7 @@ export default function SettingsPage() {
         text:
           error instanceof Error
             ? error.message
-            : "Failed to refresh trading strategy cache",
+            : "Failed to refresh regime prompt cache",
       });
     } finally {
       setRefreshing(false);
@@ -283,32 +288,47 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Trading Strategy Section */}
+            {/* Regime Classifier Prompt Section */}
             <div className="border-2 border-black bg-white">
               {/* Section Header */}
               <div className="border-b-2 border-black bg-gray-50 px-4 py-3">
                 <h2 className="text-lg font-bold uppercase tracking-wider">
-                  Trading Strategy Configuration
+                  Regime Classifier Prompt
                 </h2>
               </div>
 
-              {/* Strategy Editor */}
+              {/* Prompt Editor */}
               <div className="p-4 md:p-6">
                 <div className="mb-4">
                   <label className="block text-sm font-bold uppercase tracking-wide text-gray-700 mb-2">
-                    Trading Strategy Rules
+                    Runtime Prompt Template
                   </label>
                   <p className="mb-3 text-xs text-gray-600">
-                    This editor updates the runtime database strategy. Reset restores the
-                    versioned template from <code>backend/config/trading_strategy.md</code>.
-                    Quant parameters remain in <code>backend/config/agent.yaml</code>.
+                    This editor updates the regime classifier prompt. Reset restores the
+                    repository template from <code>backend/config/regime_classifier_prompt.md</code>.
                     {strategySource ? ` Current source: ${strategySource}.` : ""}
                   </p>
+                  {strategyRuntime && (
+                    <div className="mb-3 grid grid-cols-1 gap-2 border-2 border-black bg-gray-50 p-3 text-xs md:grid-cols-2">
+                      <div>Architecture: {String(strategyRuntime.architecture_mode ?? "-")}</div>
+                      <div>Role: {String(strategyRuntime.prompt_role ?? "-")}</div>
+                      <div>Version: {String(strategyRuntime.prompt_version ?? strategyRuntime.active_prompt_version ?? "-")}</div>
+                      <div>Source: {String(strategyRuntime.prompt_source ?? strategyRuntime.source ?? "-")}</div>
+                      <div className={strategyRuntime.compatible === false ? "font-bold text-red-700" : "font-bold text-green-700"}>
+                        Compatible: {strategyRuntime.compatible === false ? "NO" : "YES"}
+                      </div>
+                      {strategyRuntime.mismatch_reason ? (
+                        <div className="font-bold text-red-700 md:col-span-2">
+                          {String(strategyRuntime.mismatch_reason)}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                   <textarea
                     value={strategy}
                     onChange={(e) => setStrategy(e.target.value)}
                     className="w-full h-64 px-3 py-2 border-2 border-black font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter your trading strategy configuration..."
+                    placeholder="Enter the regime classifier prompt..."
                   />
                 </div>
 
@@ -327,7 +347,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <Save size={16} />
-                        <span>SAVE STRATEGY</span>
+                        <span>SAVE PROMPT</span>
                       </>
                     )}
                   </button>
@@ -345,7 +365,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <RotateCcw size={16} />
-                        <span>RESET TO TEMPLATE</span>
+                        <span>RESET RUNTIME PROMPT</span>
                       </>
                     )}
                   </button>
@@ -363,7 +383,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <RefreshCw size={16} />
-                        <span>REFRESH STRATEGY CACHE</span>
+                        <span>REFRESH PROMPT CACHE</span>
                       </>
                     )}
                   </button>

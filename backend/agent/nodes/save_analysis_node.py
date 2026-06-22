@@ -11,8 +11,16 @@ logger = logging.getLogger("AlphaTransformer")
 async def save_analysis_node(state: AgentState) -> AgentState:
     """保存完整分析结果到数据库"""
     try:
+        payload = dict(state["symbol_decisions"])
+        if state.get("strategy_runtime") or state.get("regime_classification"):
+            payload["_metadata"] = {
+                "strategy_runtime": state.get("strategy_runtime"),
+                "regime_classification": state.get("regime_classification"),
+                "deterministic_decisions": state.get("deterministic_decisions"),
+            }
+
         await analysis_service.save_analysis(
-            symbol_decisions=state["symbol_decisions"],
+            symbol_decisions=payload,
             overall_summary=state.get("overall_summary"),
             error=state.get("error")
         )
