@@ -353,15 +353,14 @@ def build_entry_decision_from_guardrail(
     if lifecycle is None:
         return _hold_decision(symbol, regime, guardrail, "lifecycle selection blocked")
 
-    stop_side = guardrail.stops.long if side == Side.LONG else guardrail.stops.short
-    if stop_side.stop_loss is None or stop_side.take_profit is None:
-        return _hold_decision(symbol, regime, guardrail, "SL/TP missing")
     if not guardrail.reference_price or guardrail.reference_price <= 0:
         return _hold_decision(symbol, regime, guardrail, "reference price missing")
 
     risk_budget = calculate_risk_budget(equity, regime, [], config)
-    quantity = safe_div(guardrail.sizing.position_size_usd, guardrail.reference_price)
-    candidate_risk = abs(guardrail.reference_price - stop_side.stop_loss) * quantity
+    candidate_risk = min(
+        equity * config.risk.max_trade_risk_pct,
+        risk_budget.remaining_risk,
+    )
     gate = risk_gate(
         account_drawdown=0.0,
         circuit_breaker_active=False,
@@ -373,6 +372,16 @@ def build_entry_decision_from_guardrail(
     )
     if gate == Gate.BLOCK:
         return _hold_decision(symbol, regime, guardrail, "risk gate blocks entry")
+    order_intent = construct_order_intent(
+        symbol=symbol,
+        side=side,
+        lifecycle=lifecycle,
+        entry_price=guardrail.reference_price,
+        atr=indicators.atr,
+        equity=equity,
+        remaining_risk=risk_budget.remaining_risk,
+        config=config,
+    )
 
     decision = {
         "action": f"OPEN_{side.value}",
@@ -380,9 +389,9 @@ def build_entry_decision_from_guardrail(
             f"Deterministic entry approved: regime={regime.value}, setup={setup.value}, "
             f"lifecycle={lifecycle.value}, q={q:.2f}, edge={edge:.2f}."
         ),
-        "position_size_usd": guardrail.sizing.position_size_usd,
-        "stop_loss_price": stop_side.stop_loss,
-        "take_profit_price": stop_side.take_profit,
+        "position_size_usd": order_intent.size * order_intent.entry_price,
+        "stop_loss_price": order_intent.stop_loss,
+        "take_profit_price": order_intent.take_profit,
         "leverage": guardrail.sizing.leverage,
         "regime": regime.value,
         "setup": setup.value,
@@ -393,8 +402,17 @@ def build_entry_decision_from_guardrail(
             "edge": edge,
             "budget_available": risk_budget.budget_available,
             "risk_gate": gate.value,
-            "candidate_risk": candidate_risk,
+            "candidate_risk": order_intent.risk_amount,
             "remaining_risk": risk_budget.remaining_risk,
+        },
+        "order_intent": {
+            "side": order_intent.side.value,
+            "lifecycle": order_intent.lifecycle.value,
+            "size": order_intent.size,
+            "entry_price": order_intent.entry_price,
+            "stop_loss": order_intent.stop_loss,
+            "take_profit": order_intent.take_profit,
+            "risk_amount": order_intent.risk_amount,
         },
     }
     return decision

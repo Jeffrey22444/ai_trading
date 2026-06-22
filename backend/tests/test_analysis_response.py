@@ -265,15 +265,16 @@ def test_regime_path_builds_open_from_code_not_ai_trade_action():
     )
 
     assert decisions["BTC"]["action"] == "OPEN_LONG"
-    assert decisions["BTC"]["position_size_usd"] == 75.0
+    assert decisions["BTC"]["position_size_usd"] == 400.0
     assert decisions["BTC"]["stop_loss_price"] == 95.0
     assert decisions["BTC"]["take_profit_price"] == 110.0
+    assert decisions["BTC"]["order_intent"]["risk_amount"] == 20.0
 
 
 def test_regime_path_blocks_when_risk_gate_blocks():
     decisions = build_deterministic_symbol_decisions(
         symbols=["BTC"],
-        total_balance=100,
+        total_balance=0,
         positions_by_symbol={},
         quant_guardrails={"BTC": _guardrail(action_allowed=True)},
         regime_indicators={"BTC": _regime_indicators()},
