@@ -10,7 +10,7 @@ from agent.nodes.analysis_node import (
     parse_json_response,
     parse_regime_response,
 )
-from agent.regime.models import Regime
+from agent.regime.models import IndicatorSet, Regime
 from agent.quant.models import (
     DirectionScore,
     EntryQualityResult,
@@ -142,6 +142,25 @@ def _position(side):
     )
 
 
+def _regime_indicators(**overrides):
+    values = {
+        "close": 120.0,
+        "ema_fast": 115.0,
+        "ema_slow": 100.0,
+        "ema_fast_previous": 110.0,
+        "ema_mean": 118.0,
+        "atr": 5.0,
+        "atr_history": [3.0] * 40 + [4.0] * 40 + [5.0] * 20,
+        "highs": list(range(90, 122)),
+        "lows": list(range(70, 102)),
+        "closes": list(range(90, 121)),
+        "macd_histogram": 2.0,
+        "previous_macd_histogram": 1.0,
+    }
+    values.update(overrides)
+    return IndicatorSet(**values)
+
+
 def test_existing_short_is_closed_when_opposing_long_score_emerges_even_if_opening_blocked():
     decision = SymbolDecision(
         symbol="BTC",
@@ -206,6 +225,7 @@ def test_unknown_regime_blocks_new_entry_even_when_guardrail_allows_open():
         total_balance=1000,
         positions_by_symbol={},
         quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators()},
         regime_classification=RegimeClassification(
             symbol_regimes=[
                 SymbolRegimeDecision(
@@ -229,6 +249,7 @@ def test_regime_path_builds_open_from_code_not_ai_trade_action():
         total_balance=1000,
         positions_by_symbol={},
         quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators()},
         regime_classification=RegimeClassification(
             symbol_regimes=[
                 SymbolRegimeDecision(
@@ -255,6 +276,7 @@ def test_regime_path_blocks_when_risk_gate_blocks():
         total_balance=100,
         positions_by_symbol={},
         quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators()},
         regime_classification=RegimeClassification(
             symbol_regimes=[
                 SymbolRegimeDecision(
@@ -273,12 +295,38 @@ def test_regime_path_blocks_when_risk_gate_blocks():
     assert "risk gate" in decisions["BTC"]["reasoning"]
 
 
+def test_regime_path_blocks_when_f1_f4_q_blocks():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=1000,
+        positions_by_symbol={},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators(atr=None)},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.TREND,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="trend",
+                )
+            ],
+            overall_summary="trend",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "ENTRY_HOLD"
+    assert "Q below threshold" in decisions["BTC"]["reasoning"]
+
+
 def test_existing_position_is_not_reopened_by_regime_path():
     decisions = build_deterministic_symbol_decisions(
         symbols=["BTC"],
         total_balance=1000,
         positions_by_symbol={"BTC": _position("LONG")},
         quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators()},
         regime_classification=RegimeClassification(
             symbol_regimes=[
                 SymbolRegimeDecision(

@@ -13,7 +13,14 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from agent.quant.guardrails import build_quant_guardrails
-from agent.regime.engine import build_entry_decision_from_guardrail, normalize_regime
+from agent.quant.indicators import build_market_context
+from agent.regime.engine import (
+    build_entry_decision_from_guardrail,
+    normalize_regime,
+    score_direction,
+    score_entry,
+)
+from agent.regime.market import indicator_set_from_context
 from agent.regime.models import Regime, RegimeOutput
 from agent.state import AgentState
 from config.settings import config
@@ -212,6 +219,13 @@ def analysis_node(tools: List):
             quant_guardrails = build_quant_guardrails(
                 symbols, balance.available_balance, config
             )
+            regime_indicators = {
+                symbol: indicator_set_from_context(
+                    build_market_context(symbol, config.agent.timeframes),
+                    config.regime_execution,
+                )
+                for symbol in symbols
+            }
 
             # 格式化账户信息
             balance_info = f"总余额: ${balance.total_balance:.2f}, 可用余额: ${balance.available_balance:.2f}, 未实现盈亏: ${balance.unrealized_pnl:.2f}"
@@ -325,6 +339,7 @@ expires_at 必须是 Unix 秒级时间戳，不能早于当前时间。"""
                 total_balance=balance.total_balance,
                 positions_by_symbol=positions_by_symbol,
                 quant_guardrails=quant_guardrails,
+                regime_indicators=regime_indicators,
                 regime_classification=regime_classification,
             )
 
@@ -353,6 +368,7 @@ def build_deterministic_symbol_decisions(
     total_balance: float,
     positions_by_symbol: dict[str, object],
     quant_guardrails: dict,
+    regime_indicators: dict,
     regime_classification: RegimeClassification,
 ) -> dict[str, dict]:
     regimes_by_symbol = _regimes_by_symbol(regime_classification)
@@ -360,6 +376,9 @@ def build_deterministic_symbol_decisions(
 
     for symbol in symbols:
         guardrail = quant_guardrails.get(symbol)
+        indicators = regime_indicators.get(symbol)
+        entry_score = score_entry(indicators, config.regime_execution) if indicators else None
+        direction = score_direction(indicators, config.regime_execution) if indicators else None
         regime_decision = regimes_by_symbol.get(symbol)
         regime = _normalized_regime(regime_decision)
         current_position = positions_by_symbol.get(symbol)
@@ -394,6 +413,8 @@ def build_deterministic_symbol_decisions(
             symbol=symbol,
             regime=regime,
             guardrail=guardrail,
+            entry_score=entry_score,
+            direction=direction,
             equity=total_balance,
             config=config.regime_execution,
         )

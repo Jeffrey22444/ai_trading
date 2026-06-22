@@ -241,6 +241,8 @@ def build_entry_decision_from_guardrail(
     symbol: str,
     regime: Regime,
     guardrail,
+    entry_score: EntryScore | None,
+    direction: DirectionScore | None,
     equity: float,
     config,
 ) -> dict:
@@ -252,16 +254,22 @@ def build_entry_decision_from_guardrail(
         return _hold_decision(symbol, regime, guardrail, reason)
     if guardrail.score.direction_bias not in {"LONG", "SHORT"}:
         return _hold_decision(symbol, regime, guardrail, "direction is NONE")
+    if entry_score is None or direction is None:
+        return _hold_decision(symbol, regime, guardrail, "regime indicators missing")
+    if entry_score.q < config.scoring.q_threshold:
+        return _hold_decision(symbol, regime, guardrail, "Q below threshold")
+    if direction.side == Side.NONE:
+        return _hold_decision(symbol, regime, guardrail, "direction engine blocks entry")
+    if direction.side.value != guardrail.score.direction_bias:
+        return _hold_decision(symbol, regime, guardrail, "direction engine disagrees")
 
     setup = _select_setup(regime)
     if setup is None:
         return _hold_decision(symbol, regime, guardrail, "regime router has no setup")
 
     side = Side(guardrail.score.direction_bias)
-    q = clamp01(guardrail.score.total_score / 10)
-    edge = abs(
-        guardrail.score.long_score.total_score - guardrail.score.short_score.total_score
-    ) / 10
+    q = entry_score.q
+    edge = direction.edge
     lifecycle = select_lifecycle(regime, setup, q, edge, config)
     if lifecycle is None:
         return _hold_decision(symbol, regime, guardrail, "lifecycle selection blocked")
