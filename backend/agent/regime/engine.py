@@ -236,6 +236,83 @@ def final_entry_decision(
     )
 
 
+def build_entry_decision_from_guardrail(
+    *,
+    symbol: str,
+    regime: Regime,
+    guardrail,
+    equity: float,
+    config,
+) -> dict:
+    """Build a deterministic trade decision from existing quant guardrails."""
+    if regime == Regime.UNKNOWN:
+        return _hold_decision(symbol, regime, guardrail, "UNKNOWN regime blocks entries")
+    if not guardrail or not guardrail.action_allowed:
+        reason = getattr(guardrail, "hold_reason", None) or "quant guardrail blocks entry"
+        return _hold_decision(symbol, regime, guardrail, reason)
+    if guardrail.score.direction_bias not in {"LONG", "SHORT"}:
+        return _hold_decision(symbol, regime, guardrail, "direction is NONE")
+
+    setup = _select_setup(regime)
+    if setup is None:
+        return _hold_decision(symbol, regime, guardrail, "regime router has no setup")
+
+    side = Side(guardrail.score.direction_bias)
+    q = clamp01(guardrail.score.total_score / 10)
+    edge = abs(
+        guardrail.score.long_score.total_score - guardrail.score.short_score.total_score
+    ) / 10
+    lifecycle = select_lifecycle(regime, setup, q, edge, config)
+    if lifecycle is None:
+        return _hold_decision(symbol, regime, guardrail, "lifecycle selection blocked")
+
+    stop_side = guardrail.stops.long if side == Side.LONG else guardrail.stops.short
+    if stop_side.stop_loss is None or stop_side.take_profit is None:
+        return _hold_decision(symbol, regime, guardrail, "SL/TP missing")
+    if not guardrail.reference_price or guardrail.reference_price <= 0:
+        return _hold_decision(symbol, regime, guardrail, "reference price missing")
+
+    risk_budget = calculate_risk_budget(equity, regime, [], config)
+    quantity = safe_div(guardrail.sizing.position_size_usd, guardrail.reference_price)
+    candidate_risk = abs(guardrail.reference_price - stop_side.stop_loss) * quantity
+    gate = risk_gate(
+        account_drawdown=0.0,
+        circuit_breaker_active=False,
+        candidate_risk=candidate_risk,
+        cluster_active_risk=0.0,
+        equity=equity,
+        remaining_risk=risk_budget.remaining_risk,
+        config=config,
+    )
+    if gate == Gate.BLOCK:
+        return _hold_decision(symbol, regime, guardrail, "risk gate blocks entry")
+
+    decision = {
+        "action": f"OPEN_{side.value}",
+        "reasoning": (
+            f"Deterministic entry approved: regime={regime.value}, setup={setup.value}, "
+            f"lifecycle={lifecycle.value}, q={q:.2f}, edge={edge:.2f}."
+        ),
+        "position_size_usd": guardrail.sizing.position_size_usd,
+        "stop_loss_price": stop_side.stop_loss,
+        "take_profit_price": stop_side.take_profit,
+        "leverage": guardrail.sizing.leverage,
+        "regime": regime.value,
+        "setup": setup.value,
+        "lifecycle": lifecycle.value,
+        "entry_candidate": {
+            "decision": Decision.APPROVE.value,
+            "q": q,
+            "edge": edge,
+            "budget_available": risk_budget.budget_available,
+            "risk_gate": gate.value,
+            "candidate_risk": candidate_risk,
+            "remaining_risk": risk_budget.remaining_risk,
+        },
+    }
+    return decision
+
+
 def construct_order_intent(
     *,
     symbol: str,
@@ -572,3 +649,29 @@ def _replace_position(position: Position, **changes) -> Position:
     data = position.__dict__.copy()
     data.update(changes)
     return Position(**data)
+
+
+def _select_setup(regime: Regime) -> Setup | None:
+    if regime == Regime.TREND:
+        return Setup.CONTINUATION
+    if regime == Regime.RANGE:
+        return Setup.MEAN_REVERSION
+    if regime == Regime.BREAKOUT:
+        return Setup.MOMENTUM
+    return None
+
+
+def _hold_decision(symbol: str, regime: Regime, guardrail, reason: str) -> dict:
+    return {
+        "action": "ENTRY_HOLD",
+        "reasoning": f"Deterministic entry blocked: regime={regime.value}; {reason}.",
+        "position_size_usd": 0.0,
+        "stop_loss_price": None,
+        "take_profit_price": None,
+        "leverage": None,
+        "regime": regime.value,
+        "quant_guardrail": guardrail.to_prompt_dict() if guardrail else None,
+        "execution_result": None,
+        "execution_status": "pending",
+        "symbol": symbol,
+    }

@@ -1,10 +1,16 @@
+import time
 from datetime import datetime
 
 from agent.nodes.analysis_node import (
+    RegimeClassification,
     SymbolDecision,
+    SymbolRegimeDecision,
     _apply_quant_guardrail,
+    build_deterministic_symbol_decisions,
     parse_json_response,
+    parse_regime_response,
 )
+from agent.regime.models import Regime
 from agent.quant.models import (
     DirectionScore,
     EntryQualityResult,
@@ -89,8 +95,8 @@ def _guardrail(long_score=6.0, short_score=4.0, action_allowed=False):
             notes=[],
         ),
         stops=StopResult(
-            long=StopSide(None, None, None, None, "none", None),
-            short=StopSide(None, None, None, None, "none", None),
+            long=StopSide(95.0, 110.0, 5.0, None, "test", 2.0),
+            short=StopSide(105.0, 90.0, 5.0, None, "test", 2.0),
             atr_4h=None,
             current_price=100.0,
         ),
@@ -114,7 +120,9 @@ def _guardrail(long_score=6.0, short_score=4.0, action_allowed=False):
         reference_timeframe="3m",
         reference_timestamp=datetime.now(),
         action_allowed=action_allowed,
-        allowed_action="OPEN_LONG" if action_allowed and direction == "LONG" else "HOLD",
+        allowed_action=(
+            f"OPEN_{direction}" if action_allowed and direction in {"LONG", "SHORT"} else "ENTRY_HOLD"
+        ),
         hold_reason=None if action_allowed else "仓位低于 100 美元下限，强制 HOLD",
     )
 
@@ -184,3 +192,105 @@ def test_existing_short_is_not_closed_when_opposing_score_is_below_exit_threshol
     )
 
     assert result.action == "HOLD"
+
+
+def test_regime_parse_failure_degrades_to_unknown_only():
+    result = parse_regime_response("not json")
+
+    assert all(item.regime == Regime.UNKNOWN for item in result.symbol_regimes)
+
+
+def test_unknown_regime_blocks_new_entry_even_when_guardrail_allows_open():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=1000,
+        positions_by_symbol={},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.UNKNOWN,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="unknown",
+                )
+            ],
+            overall_summary="unknown",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "ENTRY_HOLD"
+
+
+def test_regime_path_builds_open_from_code_not_ai_trade_action():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=1000,
+        positions_by_symbol={},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.TREND,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="trend",
+                )
+            ],
+            overall_summary="trend",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "OPEN_LONG"
+    assert decisions["BTC"]["position_size_usd"] == 75.0
+    assert decisions["BTC"]["stop_loss_price"] == 95.0
+    assert decisions["BTC"]["take_profit_price"] == 110.0
+
+
+def test_regime_path_blocks_when_risk_gate_blocks():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=100,
+        positions_by_symbol={},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.TREND,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="trend",
+                )
+            ],
+            overall_summary="trend",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "ENTRY_HOLD"
+    assert "risk gate" in decisions["BTC"]["reasoning"]
+
+
+def test_existing_position_is_not_reopened_by_regime_path():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=1000,
+        positions_by_symbol={"BTC": _position("LONG")},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.TREND,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="trend",
+                )
+            ],
+            overall_summary="trend",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "POSITION_HOLD"
