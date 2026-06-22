@@ -4,6 +4,12 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 
 ## Current Entries
 
+### 2026-06-22 - Local Ops: Regime Deterministic Execution Core
+- **Status**: In Progress
+- **Description**: Created branch `regime` from clean `main` and added deterministic regime execution primitives for config/schema validation, regime normalization, router, F1-F4/Q scoring, direction edge rules, risk budget/gates, order construction, post-fill protection, position state transitions, reconciliation, and loop gating.
+- **URL**: local branch `regime`
+- **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`127 passed, 1 warning`). This checkpoint is deterministic core only; live workflow replacement of AI entry/exit decisions remains the next integration step.
+
 ### 2026-06-22 - GH: Revert AI_trading Root Migration And Keep Work Log Tracked
 - **Status**: Completed
 - **Description**: Reverted the repository-root migration so GitHub content returns to the `opennof1` project root layout, while keeping workspace work-log files under version control.

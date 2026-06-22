@@ -178,6 +178,76 @@ class ScoringConfig(BaseModel):
     extreme_funding_abs: float = 0.001
 
 
+class RegimeClassifierConfig(BaseModel):
+    min_confidence: float = 0.60
+    unknown_blocks_entries: bool = True
+
+
+class RegimeScoreWeightsConfig(BaseModel):
+    f1_trend_strength: float = 0.30
+    f2_momentum: float = 0.25
+    f3_volatility_context: float = 0.25
+    f4_entry_timing: float = 0.20
+
+
+class RegimeScoringConfig(BaseModel):
+    q_threshold: float = 0.65
+    d_threshold: float = 0.60
+    d_edge_threshold: float = 0.60
+    weights: RegimeScoreWeightsConfig = RegimeScoreWeightsConfig()
+    ema_fast_window: int = 20
+    ema_slow_window: int = 50
+    slope_lookback_bars: int = 5
+    structure_lookback_bars: int = 20
+    structure_half_window_bars: int = 10
+    roc_window_bars: int = 10
+    atr_window_bars: int = 14
+    atr_percentile_window_bars: int = 100
+    mean_window_bars: int = 20
+    breakout_lookback_bars: int = 20
+    max_mean_distance_atr: float = 1.5
+    max_breakout_distance_atr: float = 1.0
+
+
+class RegimeRiskConfig(BaseModel):
+    max_risk_pct: float = 0.10
+    max_trade_risk_pct: float = 0.02
+    max_drawdown_pct: float = 0.10
+    circuit_breaker_drawdown: float = 0.15
+    correlation_cap_pct: float = 0.04
+    regime_weights: Dict[str, float] = {
+        "TREND": 0.50,
+        "BREAKOUT": 0.30,
+        "RANGE": 0.20,
+    }
+
+
+class RegimeLifecycleConfig(BaseModel):
+    max_hold_seconds_short: int = 5400
+    max_hold_seconds_swing: int = 604800
+    profit_r_threshold: float = 1.0
+    short_trailing_r: float = 0.5
+    swing_trailing_r: float = 1.0
+
+
+class RegimeOrdersConfig(BaseModel):
+    atr_stop_multiplier_short: float = 1.0
+    atr_stop_multiplier_swing: float = 2.0
+    take_profit_r: float = 2.0
+    min_stop_pct: float = 0.003
+    max_slippage_pct: float = 0.003
+    max_execution_retries: int = 2
+    protection_retry_max: int = 1
+
+
+class RegimeExecutionConfig(BaseModel):
+    regime: RegimeClassifierConfig = RegimeClassifierConfig()
+    scoring: RegimeScoringConfig = RegimeScoringConfig()
+    risk: RegimeRiskConfig = RegimeRiskConfig()
+    lifecycle: RegimeLifecycleConfig = RegimeLifecycleConfig()
+    orders: RegimeOrdersConfig = RegimeOrdersConfig()
+
+
 class StopConfig(BaseModel):
     timeframe: str = "4h"
     fallback_timeframe: str = "1h"
@@ -217,6 +287,7 @@ class AppConfig(BaseModel):
     execution_safety: ExecutionSafetyConfig = ExecutionSafetyConfig()
     entry_quality: EntryQualityConfig = EntryQualityConfig()
     scoring: ScoringConfig = ScoringConfig()
+    regime_execution: RegimeExecutionConfig = RegimeExecutionConfig()
     stop: StopConfig = StopConfig()
     account_snapshot: AccountSnapshotConfig
     logging: LoggingConfig

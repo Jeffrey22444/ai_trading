@@ -1,0 +1,2 @@
+"""Deterministic regime execution primitives."""
+

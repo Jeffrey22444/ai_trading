@@ -115,6 +115,56 @@ stop:
   swing_lookback: 20
   swing_strength_m: 2
   swing_buffer_atr_fraction: 0.10
+
+regime_execution:
+  regime:
+    min_confidence: 0.60
+    unknown_blocks_entries: true
+  scoring:
+    q_threshold: 0.65
+    d_threshold: 0.60
+    d_edge_threshold: 0.60
+    weights:
+      f1_trend_strength: 0.30
+      f2_momentum: 0.25
+      f3_volatility_context: 0.25
+      f4_entry_timing: 0.20
+    ema_fast_window: 20
+    ema_slow_window: 50
+    slope_lookback_bars: 5
+    structure_lookback_bars: 20
+    structure_half_window_bars: 10
+    roc_window_bars: 10
+    atr_window_bars: 14
+    atr_percentile_window_bars: 100
+    mean_window_bars: 20
+    breakout_lookback_bars: 20
+    max_mean_distance_atr: 1.5
+    max_breakout_distance_atr: 1.0
+  risk:
+    max_risk_pct: 0.10
+    max_trade_risk_pct: 0.02
+    max_drawdown_pct: 0.10
+    circuit_breaker_drawdown: 0.15
+    correlation_cap_pct: 0.04
+    regime_weights:
+      TREND: 0.50
+      BREAKOUT: 0.30
+      RANGE: 0.20
+  lifecycle:
+    max_hold_seconds_short: 5400
+    max_hold_seconds_swing: 604800
+    profit_r_threshold: 1.0
+    short_trailing_r: 0.5
+    swing_trailing_r: 1.0
+  orders:
+    atr_stop_multiplier_short: 1.0
+    atr_stop_multiplier_swing: 2.0
+    take_profit_r: 2.0
+    min_stop_pct: 0.003
+    max_slippage_pct: 0.003
+    max_execution_retries: 2
+    protection_retry_max: 1
   
 # Account Snapshot Configuration
 account_snapshot:
