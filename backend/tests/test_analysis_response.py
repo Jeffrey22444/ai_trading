@@ -260,10 +260,10 @@ def test_regime_path_builds_open_from_code_not_ai_trade_action():
     )
 
     assert decisions["BTC"]["action"] == "OPEN_LONG"
-    assert decisions["BTC"]["position_size_usd"] == 400.0
+    assert decisions["BTC"]["position_size_usd"] == 75.0
     assert decisions["BTC"]["stop_loss_price"] == 95.0
     assert decisions["BTC"]["take_profit_price"] == 110.0
-    assert decisions["BTC"]["order_intent"]["risk_amount"] == 20.0
+    assert decisions["BTC"]["order_intent"]["risk_amount"] == 3.75
 
 
 def test_regime_path_blocks_when_risk_gate_blocks():

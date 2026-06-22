@@ -380,6 +380,7 @@ def build_entry_decision_from_guardrail(
         atr=indicators.atr,
         equity=equity,
         remaining_risk=risk_budget.remaining_risk,
+        max_notional_usd=guardrail.sizing.position_size_usd,
         config=config,
     )
 
@@ -428,6 +429,7 @@ def construct_order_intent(
     equity: float,
     remaining_risk: float,
     config,
+    max_notional_usd: float | None = None,
 ) -> OrderIntent:
     atr_multiplier = (
         config.orders.atr_stop_multiplier_short
@@ -436,7 +438,14 @@ def construct_order_intent(
     )
     stop_distance = max(atr * atr_multiplier, entry_price * config.orders.min_stop_pct)
     risk_amount = min(equity * config.risk.max_trade_risk_pct, remaining_risk)
-    size = safe_div(risk_amount, stop_distance)
+    risk_sized_quantity = safe_div(risk_amount, stop_distance)
+    notional_capped_quantity = (
+        safe_div(max_notional_usd, entry_price)
+        if max_notional_usd is not None
+        else risk_sized_quantity
+    )
+    size = min(risk_sized_quantity, notional_capped_quantity)
+    risk_amount = size * stop_distance
 
     if side == Side.LONG:
         stop_loss = entry_price - stop_distance

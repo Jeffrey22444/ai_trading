@@ -4,6 +4,12 @@ This file tracks recurring or instructive bugs and the fixes that should be reus
 
 ## Current Entries
 
+### 2026-06-22 - Regime Entry Approval Produced Non-Executable SOL Notional
+- **Issue**: Cycle 466 showed `OPEN_LONG` for SOL in the frontend, but Hyperliquid had no corresponding open position.
+- **Root Cause**: The regime order constructor sized by risk-at-stop and produced a large quantity; the decision then serialized that as `position_size_usd`, while the execution node treats `position_size_usd` as notional USD and blocks anything above the existing max-position safety cap.
+- **Solution**: Cap regime order quantity by the existing quant guardrail executable notional before serializing the decision for execution.
+- **Prevention**: Keep regime risk sizing and execution notional sizing aligned; approved entries must be executable by the same safety gate used immediately before exchange submission.
+
 ### 2026-06-21 - Entry Quality Misread Normal 3m K-Lines As Stale
 - **Issue**: After conservative entry safeguards, AI decision cycles often forced HOLD because 3m market data age was around 190 seconds and exceeded the fixed 120-second stale threshold.
 - **Root Cause**: `entry_quality` measured freshness from `IndicatorFrame.timestamp`, which was populated from `Kline.timestamp`; `Kline.timestamp` was the candle `open_time`, so normal 3m candles could appear nearly 180 seconds old before polling/network/scheduler delay.

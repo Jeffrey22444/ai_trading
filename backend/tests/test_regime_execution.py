@@ -418,6 +418,25 @@ def test_lifecycle_selection_and_order_construction():
     assert long_intent.size == pytest.approx(15 / 4)
 
 
+def test_order_construction_caps_quantity_by_executable_notional():
+    cfg = RegimeExecutionConfig()
+
+    intent = construct_order_intent(
+        symbol="SOL",
+        side=Side.LONG,
+        lifecycle=Lifecycle.SWING,
+        entry_price=75,
+        atr=0.10,
+        equity=1_000,
+        remaining_risk=20,
+        max_notional_usd=100,
+        config=cfg,
+    )
+
+    assert intent.size * intent.entry_price == pytest.approx(100)
+    assert intent.risk_amount < 20
+
+
 def test_execution_retry_count_is_bounded_and_unknown_does_not_activate():
     cfg = RegimeExecutionConfig()
     bounded = bounded_execution_result(
