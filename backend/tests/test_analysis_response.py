@@ -254,7 +254,7 @@ def test_regime_path_builds_open_from_code_not_ai_trade_action():
             symbol_regimes=[
                 SymbolRegimeDecision(
                     symbol="BTC",
-                    regime=Regime.TREND,
+                    regime=Regime.RANGE,
                     confidence=0.99,
                     expires_at=int(time.time()) + 60,
                     reasoning="trend",
@@ -281,7 +281,7 @@ def test_regime_path_blocks_when_risk_gate_blocks():
             symbol_regimes=[
                 SymbolRegimeDecision(
                     symbol="BTC",
-                    regime=Regime.TREND,
+                    regime=Regime.RANGE,
                     confidence=0.99,
                     expires_at=int(time.time()) + 60,
                     reasoning="trend",
@@ -306,7 +306,7 @@ def test_regime_path_blocks_when_f1_f4_q_blocks():
             symbol_regimes=[
                 SymbolRegimeDecision(
                     symbol="BTC",
-                    regime=Regime.TREND,
+                    regime=Regime.RANGE,
                     confidence=0.99,
                     expires_at=int(time.time()) + 60,
                     reasoning="trend",
@@ -318,6 +318,31 @@ def test_regime_path_blocks_when_f1_f4_q_blocks():
 
     assert decisions["BTC"]["action"] == "ENTRY_HOLD"
     assert "Q below threshold" in decisions["BTC"]["reasoning"]
+
+
+def test_trend_regime_blocks_until_setup_selector_is_defined():
+    decisions = build_deterministic_symbol_decisions(
+        symbols=["BTC"],
+        total_balance=1000,
+        positions_by_symbol={},
+        quant_guardrails={"BTC": _guardrail(action_allowed=True)},
+        regime_indicators={"BTC": _regime_indicators()},
+        regime_classification=RegimeClassification(
+            symbol_regimes=[
+                SymbolRegimeDecision(
+                    symbol="BTC",
+                    regime=Regime.TREND,
+                    confidence=0.99,
+                    expires_at=int(time.time()) + 60,
+                    reasoning="trend",
+                )
+            ],
+            overall_summary="trend",
+        ),
+    )
+
+    assert decisions["BTC"]["action"] == "ENTRY_HOLD"
+    assert "regime router has no setup" in decisions["BTC"]["reasoning"]
 
 
 def test_existing_position_is_not_reopened_by_regime_path():

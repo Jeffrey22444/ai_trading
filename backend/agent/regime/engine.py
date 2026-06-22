@@ -660,12 +660,8 @@ def _replace_position(position: Position, **changes) -> Position:
 
 
 def _select_setup(regime: Regime) -> Setup | None:
-    if regime == Regime.TREND:
-        return Setup.CONTINUATION
     if regime == Regime.RANGE:
         return Setup.MEAN_REVERSION
-    if regime == Regime.BREAKOUT:
-        return Setup.MOMENTUM
     return None
 
 
