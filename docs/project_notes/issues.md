@@ -8,7 +8,7 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 - **Status**: In Progress
 - **Description**: Created branch `regime` from clean `main` and added deterministic regime execution primitives for config/schema validation, regime normalization, router, F1-F4/Q scoring, direction edge rules, risk budget/gates, order construction, post-fill protection, position state transitions, reconciliation, and loop gating.
 - **URL**: local branch `regime`
-- **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`135 passed, 1 warning`). AI analysis now outputs only regime classification; deterministic code converts regime + F1-F4/Q + Direction + existing quant guardrails into entry/hold decisions and applies the regime risk gate. Execution results persist position state in the existing analysis JSON; capital is released only after the post-close position refresh confirms flat.
+- **Notes**: Baseline backend tests passed before edits (`112 passed, 1 warning`). Current backend tests pass (`136 passed, 1 warning`). AI analysis now outputs only regime classification; deterministic code converts regime + F1-F4/Q + Direction + existing quant guardrails into entry/hold decisions and applies the regime risk gate. Execution uses bounded retries, persists position state in the existing analysis JSON, and releases capital only after the post-close position refresh confirms flat.
 
 ### 2026-06-22 - GH: Revert AI_trading Root Migration And Keep Work Log Tracked
 - **Status**: Completed

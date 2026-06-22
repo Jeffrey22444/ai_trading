@@ -1,3 +1,4 @@
+import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -7,6 +8,7 @@ from agent.nodes.trading_execution_node import (
     _decision_leverage,
     _execute_open_long,
     _execute_open_short,
+    _execute_with_retries,
     _mark_confirmed_closed,
 )
 from trading.risk_guard import normalize_position_size_usd, validate_open_decision
@@ -278,3 +280,23 @@ def test_capital_releases_only_after_exchange_confirms_flat():
 
     assert decision["execution_result"]["position_state"]["state"] == "CLOSED"
     assert decision["execution_result"]["position_state"]["capital_released"] is True
+
+
+@pytest.mark.asyncio
+async def test_execution_retries_stop_at_configured_limit(monkeypatch):
+    calls = 0
+
+    async def always_fail(symbol, decision, trader, balance, positions):
+        nonlocal calls
+        calls += 1
+        return {"status": "failed", "action": decision["action"], "symbol": symbol}
+
+    module = importlib.import_module("agent.nodes.trading_execution_node")
+    monkeypatch.setattr(module, "_execute_futures_trading", always_fail)
+
+    result = await _execute_with_retries(
+        "BTC", {"action": "OPEN_LONG"}, trader=None, balance=None, positions=[]
+    )
+
+    assert calls == result["max_execution_retries"] + 1
+    assert result["status"] == "failed"

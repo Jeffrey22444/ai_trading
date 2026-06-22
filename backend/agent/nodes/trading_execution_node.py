@@ -57,7 +57,7 @@ async def trading_execution_node(state: AgentState) -> AgentState:
         # 第一步：执行所有平仓操作
         for symbol, decision in close_decisions.items():
             try:
-                execution_result = await _execute_futures_trading(
+                execution_result = await _execute_with_retries(
                     symbol, decision, trader, balance, positions
                 )
                 decision["execution_result"] = execution_result
@@ -85,7 +85,7 @@ async def trading_execution_node(state: AgentState) -> AgentState:
         # 第三步：执行所有开仓操作
         for symbol, decision in open_decisions.items():
             try:
-                execution_result = await _execute_futures_trading(
+                execution_result = await _execute_with_retries(
                     symbol, decision, trader, balance, positions
                 )
                 decision["execution_result"] = execution_result
@@ -162,6 +162,31 @@ async def _execute_futures_trading(symbol: str, decision: Dict[str, Any], trader
             "error": str(e),
             "timestamp": timestamp
         }
+
+
+async def _execute_with_retries(
+    symbol: str, decision: Dict[str, Any], trader, balance, positions
+) -> Dict[str, Any]:
+    max_retries = config.regime_execution.orders.max_execution_retries
+    last_result = None
+    for attempt in range(max_retries + 1):
+        result = await _execute_futures_trading(
+            symbol, decision, trader, balance, positions
+        )
+        result["execution_attempt"] = attempt + 1
+        result["max_execution_retries"] = max_retries
+        if result.get("status") in {"success", "blocked"}:
+            return result
+        last_result = result
+    return last_result or {
+        "status": "failed",
+        "action": decision.get("action"),
+        "symbol": symbol,
+        "error": "execution retry exhausted without result",
+        "execution_attempt": max_retries + 1,
+        "max_execution_retries": max_retries,
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 async def _execute_open_long(symbol: str, decision: Dict, trader, current_price: float, balance) -> Dict[str, Any]:
