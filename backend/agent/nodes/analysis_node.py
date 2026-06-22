@@ -415,6 +415,7 @@ def build_deterministic_symbol_decisions(
             guardrail=guardrail,
             entry_score=entry_score,
             direction=direction,
+            indicators=indicators,
             equity=total_balance,
             config=config.regime_execution,
         )

@@ -14,6 +14,7 @@ from agent.regime.engine import (
     score_direction,
     score_entry,
     select_lifecycle,
+    select_setup,
     tighten_stop_loss,
     verify_post_fill_protection,
 )
@@ -51,6 +52,25 @@ def _indicators(**overrides):
         "closes": list(range(90, 121)),
         "macd_histogram": 2.0,
         "previous_macd_histogram": 1.0,
+    }
+    values.update(overrides)
+    return IndicatorSet(**values)
+
+
+def _setup_indicators(**overrides):
+    values = {
+        "close": 100.0,
+        "ema_fast": 99.8,
+        "ema_slow": 95.0,
+        "ema_fast_previous": 99.0,
+        "ema_mean": 99.0,
+        "atr": 2.0,
+        "atr_history": [2.0] * 100,
+        "highs": [90.0] * 20 + [101.0],
+        "lows": [80.0] * 20 + [98.0],
+        "closes": [95.0] * 19 + [99.0, 100.0],
+        "macd_histogram": 1.0,
+        "previous_macd_histogram": 0.5,
     }
     values.update(overrides)
     return IndicatorSet(**values)
@@ -161,6 +181,141 @@ def test_direction_tie_and_low_edge_block_entry():
     assert tied.side == Side.NONE
     assert low_edge.edge < cfg.scoring.d_edge_threshold
     assert low_edge.side == Side.NONE
+
+
+def test_setup_selector_blocks_unknown_none_side_and_missing_atr():
+    cfg = RegimeExecutionConfig()
+
+    assert select_setup(Regime.UNKNOWN, Side.LONG, _setup_indicators(), cfg).setup == Setup.NONE
+    assert select_setup(Regime.TREND, Side.NONE, _setup_indicators(), cfg).setup == Setup.NONE
+    assert select_setup(Regime.TREND, Side.LONG, _setup_indicators(atr=0), cfg).setup == Setup.NONE
+
+
+def test_setup_selector_trend_pullbacks():
+    cfg = RegimeExecutionConfig()
+
+    long_result = select_setup(
+        Regime.TREND,
+        Side.LONG,
+        _setup_indicators(close=100, ema_fast=99.8, ema_slow=95, highs=[101] * 20 + [100]),
+        cfg,
+    )
+    short_result = select_setup(
+        Regime.TREND,
+        Side.SHORT,
+        _setup_indicators(
+            close=90,
+            ema_fast=90.2,
+            ema_slow=95,
+            highs=[100] * 21,
+            lows=[88] * 20 + [90],
+            closes=[95] * 19 + [91, 90],
+            macd_histogram=-1,
+            previous_macd_histogram=-0.5,
+        ),
+        cfg,
+    )
+
+    assert long_result.setup == Setup.PULLBACK
+    assert short_result.setup == Setup.PULLBACK
+
+
+def test_setup_selector_trend_continuations_and_middle_block():
+    cfg = RegimeExecutionConfig()
+
+    long_result = select_setup(
+        Regime.TREND,
+        Side.LONG,
+        _setup_indicators(close=102, ema_fast=99, ema_slow=95, highs=[100] * 20 + [102]),
+        cfg,
+    )
+    short_result = select_setup(
+        Regime.TREND,
+        Side.SHORT,
+        _setup_indicators(
+            close=88,
+            ema_fast=91,
+            ema_slow=95,
+            lows=[90] * 20 + [88],
+            closes=[95] * 19 + [89, 88],
+            macd_histogram=-1,
+            previous_macd_histogram=-0.5,
+        ),
+        cfg,
+    )
+    middle = select_setup(
+        Regime.TREND,
+        Side.LONG,
+        _setup_indicators(close=100, ema_fast=98, ema_slow=95, highs=[101] * 21),
+        cfg,
+    )
+
+    assert long_result.setup == Setup.CONTINUATION
+    assert short_result.setup == Setup.CONTINUATION
+    assert middle.setup == Setup.NONE
+
+
+def test_setup_selector_breakout_momentum_and_continuation():
+    cfg = RegimeExecutionConfig()
+
+    fresh_long = select_setup(
+        Regime.BREAKOUT,
+        Side.LONG,
+        _setup_indicators(close=102, highs=[100] * 20 + [102], closes=[95] * 19 + [99, 102]),
+        cfg,
+    )
+    fresh_short = select_setup(
+        Regime.BREAKOUT,
+        Side.SHORT,
+        _setup_indicators(
+            close=88,
+            lows=[90] * 20 + [88],
+            closes=[95] * 19 + [91, 88],
+            macd_histogram=-1,
+            previous_macd_histogram=-0.5,
+        ),
+        cfg,
+    )
+    continued_long = select_setup(
+        Regime.BREAKOUT,
+        Side.LONG,
+        _setup_indicators(close=103, ema_fast=100, ema_slow=95, highs=[100] * 20 + [103], closes=[95] * 19 + [101, 103]),
+        cfg,
+    )
+    continued_short = select_setup(
+        Regime.BREAKOUT,
+        Side.SHORT,
+        _setup_indicators(
+            close=87,
+            ema_fast=90,
+            ema_slow=95,
+            lows=[90] * 20 + [87],
+            closes=[95] * 19 + [89, 87],
+            macd_histogram=-1,
+            previous_macd_histogram=-0.5,
+        ),
+        cfg,
+    )
+    weak = select_setup(
+        Regime.BREAKOUT,
+        Side.LONG,
+        _setup_indicators(close=102, highs=[100] * 20 + [102], macd_histogram=0.1, previous_macd_histogram=0.5),
+        cfg,
+    )
+
+    assert fresh_long.setup == Setup.MOMENTUM
+    assert fresh_short.setup == Setup.MOMENTUM
+    assert continued_long.setup == Setup.CONTINUATION
+    assert continued_short.setup == Setup.CONTINUATION
+    assert weak.setup == Setup.NONE
+
+
+def test_setup_selector_range_mean_reversion_short_lifecycle():
+    cfg = RegimeExecutionConfig()
+    selection = select_setup(Regime.RANGE, Side.LONG, _setup_indicators(), cfg)
+
+    assert selection.setup == Setup.MEAN_REVERSION
+    assert select_lifecycle(Regime.RANGE, selection.setup, q=0.7, edge=0.7, config=cfg) == Lifecycle.SHORT
 
 
 def test_final_entry_decision_requires_q_direction_budget_and_risk_pass():

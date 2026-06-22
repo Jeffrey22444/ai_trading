@@ -151,6 +151,9 @@ regime_execution:
       TREND: 0.50
       BREAKOUT: 0.30
       RANGE: 0.20
+  setup:
+    pullback_max_ema_distance_atr: 0.75
+    breakout_buffer_atr: 0.10
   lifecycle:
     max_hold_seconds_short: 5400
     max_hold_seconds_swing: 604800

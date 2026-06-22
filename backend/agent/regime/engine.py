@@ -26,6 +26,7 @@ from agent.regime.models import (
     Regime,
     RegimeOutput,
     RiskBudget,
+    SetupSelection,
     Side,
     Setup,
 )
@@ -149,6 +150,77 @@ def select_lifecycle(
     return None
 
 
+def select_setup(
+    regime: Regime, side: Side, indicators: IndicatorSet, config
+) -> SetupSelection:
+    if regime == Regime.UNKNOWN:
+        return SetupSelection(regime, side, Setup.NONE, "UNKNOWN regime")
+    if side == Side.NONE:
+        return SetupSelection(regime, side, Setup.NONE, "side is NONE")
+    if not indicators.atr or indicators.atr <= 0:
+        return SetupSelection(regime, side, Setup.NONE, "ATR missing")
+    if regime == Regime.RANGE:
+        return SetupSelection(regime, side, Setup.MEAN_REVERSION)
+    values = [
+        indicators.ema_fast,
+        indicators.ema_slow,
+        indicators.macd_histogram,
+        indicators.previous_macd_histogram,
+    ]
+    lookback = config.scoring.breakout_lookback_bars
+    if (
+        any(value is None for value in values)
+        or len(indicators.highs) <= lookback
+        or len(indicators.lows) <= lookback
+        or len(indicators.closes) <= max(lookback, config.scoring.roc_window_bars)
+    ):
+        return SetupSelection(regime, side, Setup.NONE, "setup data missing")
+
+    previous_high = max(indicators.highs[-lookback - 1 : -1])
+    previous_low = min(indicators.lows[-lookback - 1 : -1])
+    prev_close = indicators.closes[-2]
+    close = indicators.close
+    roc = _roc(indicators.closes, config.scoring.roc_window_bars)
+    buffer = config.setup.breakout_buffer_atr * indicators.atr
+    near_fast_ema = (
+        abs(close - indicators.ema_fast) / indicators.atr
+        <= config.setup.pullback_max_ema_distance_atr
+    )
+    trend_aligned_long = close > indicators.ema_fast > indicators.ema_slow
+    trend_aligned_short = close < indicators.ema_fast < indicators.ema_slow
+    momentum_ok_long = roc > 0 and indicators.macd_histogram > indicators.previous_macd_histogram
+    momentum_ok_short = roc < 0 and indicators.macd_histogram < indicators.previous_macd_histogram
+    breaks_high = close >= previous_high + buffer
+    breaks_low = close <= previous_low - buffer
+    fresh_break_high = prev_close <= previous_high and breaks_high
+    fresh_break_low = prev_close >= previous_low and breaks_low
+    continued_break_high = prev_close > previous_high and breaks_high
+    continued_break_low = prev_close < previous_low and breaks_low
+
+    if regime == Regime.TREND and side == Side.LONG:
+        if trend_aligned_long and near_fast_ema and not breaks_high:
+            return SetupSelection(regime, side, Setup.PULLBACK)
+        if trend_aligned_long and momentum_ok_long and breaks_high:
+            return SetupSelection(regime, side, Setup.CONTINUATION)
+    if regime == Regime.TREND and side == Side.SHORT:
+        if trend_aligned_short and near_fast_ema and not breaks_low:
+            return SetupSelection(regime, side, Setup.PULLBACK)
+        if trend_aligned_short and momentum_ok_short and breaks_low:
+            return SetupSelection(regime, side, Setup.CONTINUATION)
+    if regime == Regime.BREAKOUT and side == Side.LONG:
+        if fresh_break_high and momentum_ok_long:
+            return SetupSelection(regime, side, Setup.MOMENTUM)
+        if continued_break_high and trend_aligned_long and momentum_ok_long:
+            return SetupSelection(regime, side, Setup.CONTINUATION)
+    if regime == Regime.BREAKOUT and side == Side.SHORT:
+        if fresh_break_low and momentum_ok_short:
+            return SetupSelection(regime, side, Setup.MOMENTUM)
+        if continued_break_low and trend_aligned_short and momentum_ok_short:
+            return SetupSelection(regime, side, Setup.CONTINUATION)
+
+    return SetupSelection(regime, side, Setup.NONE, "setup selector blocked")
+
+
 def calculate_risk_budget(
     equity: float, regime: Regime, open_risks: list[OpenRisk], config
 ) -> RiskBudget:
@@ -243,6 +315,7 @@ def build_entry_decision_from_guardrail(
     guardrail,
     entry_score: EntryScore | None,
     direction: DirectionScore | None,
+    indicators: IndicatorSet | None,
     equity: float,
     config,
 ) -> dict:
@@ -254,7 +327,7 @@ def build_entry_decision_from_guardrail(
         return _hold_decision(symbol, regime, guardrail, reason)
     if guardrail.score.direction_bias not in {"LONG", "SHORT"}:
         return _hold_decision(symbol, regime, guardrail, "direction is NONE")
-    if entry_score is None or direction is None:
+    if entry_score is None or direction is None or indicators is None:
         return _hold_decision(symbol, regime, guardrail, "regime indicators missing")
     if entry_score.q < config.scoring.q_threshold:
         return _hold_decision(symbol, regime, guardrail, "Q below threshold")
@@ -263,9 +336,15 @@ def build_entry_decision_from_guardrail(
     if direction.side.value != guardrail.score.direction_bias:
         return _hold_decision(symbol, regime, guardrail, "direction engine disagrees")
 
-    setup = _select_setup(regime)
-    if setup is None:
-        return _hold_decision(symbol, regime, guardrail, "regime router has no setup")
+    setup_selection = select_setup(regime, direction.side, indicators, config)
+    if setup_selection.setup == Setup.NONE:
+        return _hold_decision(
+            symbol,
+            regime,
+            guardrail,
+            setup_selection.block_reason or "setup selector blocked",
+        )
+    setup = setup_selection.setup
 
     side = Side(guardrail.score.direction_bias)
     q = entry_score.q
@@ -657,12 +736,6 @@ def _replace_position(position: Position, **changes) -> Position:
     data = position.__dict__.copy()
     data.update(changes)
     return Position(**data)
-
-
-def _select_setup(regime: Regime) -> Setup | None:
-    if regime == Regime.RANGE:
-        return Setup.MEAN_REVERSION
-    return None
 
 
 def _hold_decision(symbol: str, regime: Regime, guardrail, reason: str) -> dict:

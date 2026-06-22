@@ -18,6 +18,7 @@ class Setup(StrEnum):
     CONTINUATION = "CONTINUATION"
     MEAN_REVERSION = "MEAN_REVERSION"
     MOMENTUM = "MOMENTUM"
+    NONE = "NONE"
 
 
 class Lifecycle(StrEnum):
@@ -118,6 +119,14 @@ class DirectionScore:
     d_short: float
     edge: float
     side: Side
+
+
+@dataclass(frozen=True)
+class SetupSelection:
+    regime: Regime
+    side: Side
+    setup: Setup
+    block_reason: str | None = None
 
 
 @dataclass(frozen=True)

@@ -222,6 +222,11 @@ class RegimeRiskConfig(BaseModel):
     }
 
 
+class RegimeSetupConfig(BaseModel):
+    pullback_max_ema_distance_atr: float = 0.75
+    breakout_buffer_atr: float = 0.10
+
+
 class RegimeLifecycleConfig(BaseModel):
     max_hold_seconds_short: int = 5400
     max_hold_seconds_swing: int = 604800
@@ -244,6 +249,7 @@ class RegimeExecutionConfig(BaseModel):
     regime: RegimeClassifierConfig = RegimeClassifierConfig()
     scoring: RegimeScoringConfig = RegimeScoringConfig()
     risk: RegimeRiskConfig = RegimeRiskConfig()
+    setup: RegimeSetupConfig = RegimeSetupConfig()
     lifecycle: RegimeLifecycleConfig = RegimeLifecycleConfig()
     orders: RegimeOrdersConfig = RegimeOrdersConfig()
 
