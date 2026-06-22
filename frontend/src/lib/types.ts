@@ -4,9 +4,23 @@ export interface AccountValue {
   value: number;
 }
 
+export type TradeActionKind =
+  | 'OPEN_LONG'
+  | 'OPEN_SHORT'
+  | 'CLOSE_LONG'
+  | 'CLOSE_SHORT'
+  | 'ENTRY_HOLD'
+  | 'POSITION_HOLD'
+  | 'NO_ACTION'
+  | 'ENTRY_BLOCK'
+  | 'PROMPT_CONTRACT_MISMATCH'
+  | 'REGIME_ONLY'
+  | 'UNKNOWN_ACTION';
+
 export interface TradeAction {
-  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT' | 'ENTRY_HOLD' | 'POSITION_HOLD';
+  action: TradeActionKind;
   symbol: string;
+  reasoning?: string | null;
   quantity?: number;
   price?: number;
   pnl?: number;
@@ -16,13 +30,26 @@ export interface TradeAction {
   takeProfitPrice?: number | null;
   leverage?: number | null;
   quantGuardrail?: QuantGuardrail | null;
+  regime?: string | null;
+  confidence?: number | null;
+  setup?: string | null;
+  decision?: string | null;
+  blockReason?: string | null;
+  regimeClassification?: unknown;
+  deterministicDecision?: unknown;
+  strategyRuntime?: unknown;
+  promptStatus?: unknown;
+  executionStatus?: string | null;
+  executionResultStatus?: string | null;
+  executionMessage?: string | null;
+  executionError?: string | null;
 }
 
 export interface QuantGuardrail {
-  direction_bias: 'LONG' | 'SHORT' | 'NEUTRAL';
-  total_score: number;
-  action_allowed: boolean;
-  allowed_action: string;
+  direction_bias?: 'LONG' | 'SHORT' | 'NEUTRAL' | string | null;
+  total_score?: number | null;
+  action_allowed?: boolean | null;
+  allowed_action?: string | null;
   hold_reason?: string | null;
   sizing?: {
     position_size_usd?: number | null;
@@ -50,6 +77,9 @@ export interface Decision {
   reasoning: string;
   actions: TradeAction[]; // Multiple actions per cycle
   status: 'PENDING' | 'EXECUTED' | 'CANCELLED' | 'FAILED';
+  strategyRuntime?: unknown;
+  regimeClassification?: unknown;
+  deterministicDecision?: unknown;
 }
 
 export interface Position {

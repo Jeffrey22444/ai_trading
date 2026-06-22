@@ -1,5 +1,6 @@
 import type { AccountValue, Decision, Position, TradeStats } from './types';
 import { getApiBaseUrl } from './config';
+import { normalizeDecision } from './decision-normalizer';
 
 // Dynamic API base URL based on configuration
 const API_BASE_URL = getApiBaseUrl();
@@ -62,8 +63,8 @@ interface BackendDecisionResponse {
   analysis_id: string;
   overall_summary?: string;
   symbol_decisions: Record<string, {
-    action: string;
-    reasoning: string;
+    action?: string;
+    reasoning?: string;
     execution_status: string;
     position_size_usd?: number | null;
     stop_loss_price?: number | null;
@@ -71,15 +72,17 @@ interface BackendDecisionResponse {
     leverage?: number | null;
     quant_guardrail?: any;
     execution_result?: {
-      status: string;
-      action: string;
-      symbol: string;
-      message: string;
+      status?: string;
+      action?: string;
+      symbol?: string;
+      message?: string;
       quantity?: number;
       price?: number;
-      timestamp: string;
+      timestamp?: string;
     };
   }>;
+  error?: string | null;
+  strategy_runtime?: any;
   model_name: string;
   duration_ms?: number;
 }
@@ -135,28 +138,7 @@ export interface AgentControlResponse {
 
 // Data transformation utilities
 function transformDecisionData(backendDecision: BackendDecisionResponse): Decision {
-  const actions = Object.entries(backendDecision.symbol_decisions).map(([symbol, decision]) => ({
-    action: decision.action as any,
-    symbol,
-    quantity: decision.execution_result?.quantity,
-    price: decision.execution_result?.price,
-    positionSizeUsd: decision.position_size_usd,
-    stopLossPrice: decision.stop_loss_price,
-    takeProfitPrice: decision.take_profit_price,
-    leverage: decision.leverage,
-    quantGuardrail: decision.quant_guardrail,
-    // Note: Backend doesn't provide pnl and holdingTime in this format
-    // These might need to be calculated or fetched separately
-  }));
-
-  return {
-    id: backendDecision.analysis_id,
-    sequence: backendDecision.id,
-    timestamp: backendDecision.timestamp,
-    reasoning: backendDecision.overall_summary || 'AI analysis completed',
-    actions,
-    status: 'EXECUTED', // Backend decisions are typically executed
-  };
+  return normalizeDecision(backendDecision);
 }
 
 function transformPositionData(backendPosition: BackendPosition): Position {

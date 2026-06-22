@@ -4,6 +4,12 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 
 ## Current Entries
 
+### 2026-06-22 - Local Ops: Cycle 479 Decision Display Conflict
+- **Status**: Completed
+- **Description**: Fixed the frontend decision list so final top-level action is the only normal-display entry permission source; legacy `quant_guardrail.allowed_action`, score, winrate, and sizing no longer imply an order was approved after final `ENTRY_HOLD`.
+- **URL**: local branch `regime`
+- **Notes**: Added frontend decision normalization regression coverage for the Cycle 479 shape. Browser checks passed on desktop and mobile Decisions tab. TypeScript check and frontend production build passed.
+
 ### 2026-06-22 - Local Ops: Regime Deterministic Execution Core
 - **Status**: Completed
 - **Description**: Created branch `regime` from clean `main` and added deterministic regime execution primitives for config/schema validation, regime normalization, router, F1-F4/Q scoring, direction edge rules, risk budget/gates, order construction, post-fill protection, position state transitions, reconciliation, and loop gating.

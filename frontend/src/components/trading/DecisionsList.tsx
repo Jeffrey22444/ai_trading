@@ -1,7 +1,13 @@
 import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  isCloseAction,
+  isLongAction,
+  isOpenAction,
+  isShortAction,
+} from '@/lib/decision-normalizer';
 import { formatBeijingCycleTimestamp } from '@/lib/time';
-import type { DecisionsListProps, TradeAction } from '@/lib/types';
+import type { DecisionsListProps, TradeAction, TradeActionKind } from '@/lib/types';
 
 const DecisionsList: React.FC<DecisionsListProps> = ({
   decisions,
@@ -47,7 +53,7 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
       observer.disconnect();
     };
   }, [hasMore, onLoadMore]);
-  const getActionColor = (action: TradeAction['action']) => {
+  const getActionColor = (action: TradeActionKind) => {
     switch (action) {
       case 'OPEN_LONG':
       case 'CLOSE_SHORT':
@@ -63,7 +69,7 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
     }
   };
 
-  const formatActionText = (action: TradeAction['action']) => {
+  const formatActionText = (action: TradeActionKind) => {
     switch (action) {
       case 'OPEN_LONG':
         return 'Open a long trade on';
@@ -77,6 +83,16 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
         return 'No entry on';
       case 'POSITION_HOLD':
         return 'Hold position on';
+      case 'ENTRY_BLOCK':
+        return 'Entry blocked on';
+      case 'PROMPT_CONTRACT_MISMATCH':
+        return 'Prompt contract mismatch';
+      case 'REGIME_ONLY':
+        return 'Regime classified only';
+      case 'NO_ACTION':
+        return 'No executable action';
+      case 'UNKNOWN_ACTION':
+        return 'Unknown action';
       default:
         return 'Action on';
     }
@@ -97,13 +113,13 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
   };
 
   const formatCurrency = (value?: number | null) => {
-    if (value === undefined || value === null) return '-';
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
     return `$${value.toFixed(2)}`;
   };
 
-  const formatPercent = (value?: number | null) => {
-    if (value === undefined || value === null) return '-';
-    return `${(value * 100).toFixed(1)}%`;
+  const formatNumber = (value?: number | null) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+    return value.toFixed(1);
   };
 
   const getCoinIcon = (symbol: string) => {
@@ -165,23 +181,27 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
                   {decision.actions.map((tradeAction, actionIndex) => (
                     <div key={actionIndex} className="space-y-1">
                       <div className="flex items-center space-x-2 text-sm">
-                        {tradeAction.action === 'ENTRY_HOLD' || tradeAction.action === 'POSITION_HOLD' ? (
+                        {!isOpenAction(tradeAction.action) && !isCloseAction(tradeAction.action) ? (
                           <>
                             <span className="text-gray-500">
-                              {tradeAction.action === 'ENTRY_HOLD' ? 'No entry on' : 'Hold position on'}
+                              {formatActionText(tradeAction.action)}
                             </span>
-                            <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
-                            <span className="font-bold text-black">
-                              {displaySymbol(tradeAction.symbol)}
-                            </span>
+                            {tradeAction.symbol !== 'SYSTEM' && (
+                              <>
+                                <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
+                                <span className="font-bold text-black">
+                                  {displaySymbol(tradeAction.symbol)}
+                                </span>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
                             <span className="text-gray-500">
-                              {tradeAction.action.includes('OPEN') ? 'Open a' : 'Close a'}
+                              {isOpenAction(tradeAction.action) ? 'Open a' : 'Close a'}
                             </span>
                             <span className={`font-bold ${getActionColor(tradeAction.action)}`}>
-                              {tradeAction.action.includes('LONG') ? 'long' : 'short'}
+                              {isLongAction(tradeAction.action) ? 'long' : isShortAction(tradeAction.action) ? 'short' : 'trade'}
                             </span>
                             <span className="text-gray-500">trade on</span>
                             <span className="text-lg">{getCoinIcon(tradeAction.symbol)}</span>
@@ -197,61 +217,105 @@ const DecisionsList: React.FC<DecisionsListProps> = ({
                         )}
                       </div>
 
-                      {tradeAction.quantGuardrail && (
+                      {(tradeAction.regime || tradeAction.confidence !== undefined || tradeAction.setup || tradeAction.decision || tradeAction.blockReason) && (
                         <div className="ml-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] leading-4 text-gray-600 font-mono sm:grid-cols-4">
-                          <div>
-                            <span className="text-gray-400">Score</span>{' '}
-                            <span className="text-black font-semibold">
-                              {tradeAction.quantGuardrail.total_score.toFixed(1)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">Bias</span>{' '}
-                            <span className="text-black font-semibold">
-                              {tradeAction.quantGuardrail.direction_bias}
-                            </span>
-                          </div>
-                          <div>
+                          {tradeAction.regime && (
+                            <div>
+                              <span className="text-gray-400">Regime</span>{' '}
+                              <span className="text-black font-semibold">{tradeAction.regime}</span>
+                            </div>
+                          )}
+                          {tradeAction.confidence !== undefined && (
+                            <div>
+                              <span className="text-gray-400">Conf</span>{' '}
+                              <span className="text-black font-semibold">{formatNumber(tradeAction.confidence)}</span>
+                            </div>
+                          )}
+                          {tradeAction.setup && (
+                            <div>
+                              <span className="text-gray-400">Setup</span>{' '}
+                              <span className="text-black font-semibold">{tradeAction.setup}</span>
+                            </div>
+                          )}
+                          {tradeAction.decision && (
+                            <div>
+                              <span className="text-gray-400">Decision</span>{' '}
+                              <span className="text-black font-semibold">{tradeAction.decision}</span>
+                            </div>
+                          )}
+                          {tradeAction.blockReason && (
+                            <div className="col-span-2 text-gray-500 sm:col-span-4">
+                              {tradeAction.blockReason}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {(tradeAction.reasoning || tradeAction.executionStatus || tradeAction.executionResultStatus || tradeAction.executionMessage || tradeAction.executionError) && (
+                        <div className="ml-1 space-y-1 text-[11px] leading-4 text-gray-600 font-mono">
+                          {tradeAction.reasoning && (
+                            <div className="break-words">
+                              {tradeAction.reasoning}
+                            </div>
+                          )}
+                          {(tradeAction.executionStatus || tradeAction.executionResultStatus || tradeAction.executionMessage || tradeAction.executionError) && (
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4">
+                              {tradeAction.executionStatus && (
+                                <div>
+                                  <span className="text-gray-400">Exec</span>{' '}
+                                  <span className="text-black font-semibold">{tradeAction.executionStatus}</span>
+                                </div>
+                              )}
+                              {tradeAction.executionResultStatus && (
+                                <div>
+                                  <span className="text-gray-400">Result</span>{' '}
+                                  <span className="text-black font-semibold">{tradeAction.executionResultStatus}</span>
+                                </div>
+                              )}
+                              {(tradeAction.executionMessage || tradeAction.executionError) && (
+                                <div className="col-span-2 text-gray-500 sm:col-span-4">
+                                  {tradeAction.executionMessage ?? tradeAction.executionError}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {(tradeAction.positionSizeUsd || tradeAction.stopLossPrice || tradeAction.takeProfitPrice || tradeAction.leverage) && (
+                        <div className="ml-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] leading-4 text-gray-600 font-mono sm:grid-cols-4">
+                          {tradeAction.positionSizeUsd ? (
+                            <div>
                             <span className="text-gray-400">Size</span>{' '}
                             <span className="text-black font-semibold">
-                              {formatCurrency(tradeAction.positionSizeUsd ?? tradeAction.quantGuardrail.sizing?.position_size_usd)}
+                              {formatCurrency(tradeAction.positionSizeUsd)}
                             </span>
-                          </div>
-                          <div>
+                            </div>
+                          ) : null}
+                          {tradeAction.leverage ? (
+                            <div>
                             <span className="text-gray-400">Lev</span>{' '}
                             <span className="text-black font-semibold">
-                              {tradeAction.leverage ?? tradeAction.quantGuardrail.sizing?.leverage ?? '-'}x
+                              {tradeAction.leverage}x
                             </span>
-                          </div>
-                          <div>
+                            </div>
+                          ) : null}
+                          {tradeAction.stopLossPrice ? (
+                            <div>
                             <span className="text-gray-400">SL</span>{' '}
                             <span className="text-black font-semibold">
                               {formatCurrency(tradeAction.stopLossPrice)}
                             </span>
-                          </div>
-                          <div>
+                            </div>
+                          ) : null}
+                          {tradeAction.takeProfitPrice ? (
+                            <div>
                             <span className="text-gray-400">TP</span>{' '}
                             <span className="text-black font-semibold">
                               {formatCurrency(tradeAction.takeProfitPrice)}
                             </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">p</span>{' '}
-                            <span className="text-black font-semibold">
-                              {formatPercent(tradeAction.quantGuardrail.sizing?.winrate)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">Allowed</span>{' '}
-                            <span className="text-black font-semibold">
-                              {tradeAction.quantGuardrail.allowed_action}
-                            </span>
-                          </div>
-                          {tradeAction.quantGuardrail.hold_reason && (
-                            <div className="col-span-2 text-gray-500 sm:col-span-4">
-                              {tradeAction.quantGuardrail.hold_reason}
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       )}
                     </div>
