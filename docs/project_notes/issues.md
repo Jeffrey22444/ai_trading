@@ -4,6 +4,12 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 
 ## Current Entries
 
+### 2026-06-22 - GH: Revert AI_trading Root Migration And Keep Work Log Tracked
+- **Status**: Completed
+- **Description**: Reverted the repository-root migration so GitHub content returns to the `opennof1` project root layout, while keeping workspace work-log files under version control.
+- **URL**: https://github.com/Jeffrey22444/ai_trading
+- **Notes**: `AGENTS.md` and `docs/project_notes/` are retained in the tracked tree; local checkout is intended to use `opennof1/` as the Git worktree root again.
+
 ### 2026-06-22 - GH: Promote AI_trading As Repository Root
 - **Status**: Completed
 - **Description**: Moved Git version control from `opennof1/` to the `AI_trading/` workspace root so the repository can include `opennof1/`, `docs/project_notes/`, and root-level agent instructions.
