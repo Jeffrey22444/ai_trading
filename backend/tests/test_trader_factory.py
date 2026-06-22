@@ -20,7 +20,7 @@ def reset_factory():
 
 def test_factory_selects_hyperliquid(monkeypatch):
     monkeypatch.setattr(factory.config.exchange, "name", "hyperliquid")
-    monkeypatch.setitem(factory.TRADER_CLASSES, "hyperliquid", stub_trader_class)
+    monkeypatch.setattr(factory, "HyperliquidTrader", StubTrader)
 
     assert isinstance(factory.get_trader(), StubTrader)
 

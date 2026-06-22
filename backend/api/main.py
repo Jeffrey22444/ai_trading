@@ -18,7 +18,7 @@ if env_file.exists():
 
 from api.routes import router  # noqa: E402
 from database.database import init_database, close_database  # noqa: E402
-from market.market_data_client import market_data_client  # noqa: E402
+from market.hyperliquid_market import market_data_client  # noqa: E402
 from utils.logger import setup_logger  # noqa: E402
 from config.settings import config  # noqa: E402
 

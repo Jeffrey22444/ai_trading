@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from market.data_cache import kline_cache
-from market.market_data_client import market_data_client
+from market.hyperliquid_market import market_data_client
 from agent.workflow import create_trading_workflow
 from agent.tools.analysis_tools import create_tech_analysis_tool, tech_analysis_tool
 from agent.models import analysis_service

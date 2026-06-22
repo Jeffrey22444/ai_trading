@@ -7,13 +7,13 @@ from typing import List
 import ccxt
 
 from config.settings import config
-from trading.interface import Balance, ExchangeTrader, Position
+from trading.interface import Balance, Position
 from trading.symbols import from_exchange_symbol, to_exchange_symbol
 
 logger = logging.getLogger("AlphaTransformer")
 
 
-class HyperliquidTrader(ExchangeTrader):
+class HyperliquidTrader:
     """Hyperliquid USDC perpetual trader with testnet-first safety."""
 
     def __init__(self, exchange=None, testnet: bool | None = None):

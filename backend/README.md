@@ -14,13 +14,6 @@ Hyperliquid cryptocurrency market-data monitoring service based on Python FastAP
 uv run alpha-transformer-api
 ```
 
-### Traditional Method
-
-```bash
-pip install -r requirements.txt
-python -m api.main
-```
-
 ## Configuration
 
 Edit `config/symbols.yaml` file to configure monitored symbols.

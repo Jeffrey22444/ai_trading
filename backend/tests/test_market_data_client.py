@@ -1,4 +1,4 @@
-from market.market_data_client import market_data_client
+from market.hyperliquid_market import market_data_client
 from market.hyperliquid_market import HyperliquidMarketClient
 
 

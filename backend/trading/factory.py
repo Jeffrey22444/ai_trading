@@ -1,30 +1,19 @@
 """Configured exchange trader selection."""
 
 from config.settings import config
-from trading.interface import ExchangeTrader
+from trading.hyperliquid_trader import HyperliquidTrader
 
 
-def _hyperliquid_trader_class() -> type[ExchangeTrader]:
-    from trading.hyperliquid_trader import HyperliquidTrader
-
-    return HyperliquidTrader
+_trader_instance: HyperliquidTrader | None = None
 
 
-TRADER_CLASSES = {
-    "hyperliquid": _hyperliquid_trader_class,
-}
-
-_trader_instance: ExchangeTrader | None = None
-
-
-def get_trader() -> ExchangeTrader:
+def get_trader() -> HyperliquidTrader:
     """Return the singleton trader selected by exchange.name."""
     global _trader_instance
     if _trader_instance is None:
         if config.exchange.name.lower() != "hyperliquid":
             raise ValueError(f"当前版本仅支持 Hyperliquid: {config.exchange.name}")
-        provider = TRADER_CLASSES["hyperliquid"]
-        _trader_instance = provider()()
+        _trader_instance = HyperliquidTrader()
     return _trader_instance
 
 

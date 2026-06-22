@@ -179,3 +179,6 @@ def _coerce_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+market_data_client = HyperliquidMarketClient()
