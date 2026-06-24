@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 def is_missing_secret(value: str) -> bool:
@@ -254,6 +254,203 @@ class RegimeExecutionConfig(BaseModel):
     orders: RegimeOrdersConfig = RegimeOrdersConfig()
 
 
+class StabilityRegimeStabilizationConfig(BaseModel):
+    window_cycles: int = 3
+    required_count: int = 2
+    min_average_confidence: float = 0.70
+    unknown_never_forces_exit: bool = True
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.required_count > self.window_cycles:
+            raise ValueError("required_count must be <= window_cycles")
+        if not 0 <= self.min_average_confidence <= 1:
+            raise ValueError("min_average_confidence must be between 0 and 1")
+        return self
+
+
+class StabilityScoreSmoothingConfig(BaseModel):
+    method: str = "rolling_median"
+    window_cycles: int = 3
+
+
+class StabilityDirectionStabilizationConfig(BaseModel):
+    window_cycles: int = 3
+    required_count: int = 2
+    reversal_margin_min: float = 2.0
+    current_direction_score_max_for_reversal: float = 5.0
+    require_current_score_deterioration: bool = True
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.required_count > self.window_cycles:
+            raise ValueError("required_count must be <= window_cycles")
+        return self
+
+
+class StabilityInstabilityIndexConfig(BaseModel):
+    window_cycles: int = 3
+    high_threshold: float = 2.0
+    entry_threshold_penalty: float = 1.0
+    mark_position_watch: bool = True
+    tighten_profit_protection: bool = False
+
+
+class StabilityEntryGateConfig(BaseModel):
+    base_stable_score_min: float = 8.0
+    allow_threshold_floor_after_review: float = 7.0
+    score_margin_min: float = 2.0
+    block_if_instability_high: bool = False
+    require_position_plan_fields: bool = True
+
+
+class StabilityChallengeEngineConfig(BaseModel):
+    invalidation_threshold: float = 6.0
+    decay_after_no_evidence_cycles: int = 2
+    decay_amount: float = 1.0
+    max_score: float = 10.0
+    evidence_weights: Dict[str, float] = {
+        "opposite_score_dominance": 2.0,
+        "stable_direction_reversal": 2.0,
+        "active_regime_mismatch": 1.0,
+        "setup_mismatch": 1.0,
+        "adverse_price_near_initial_stop": 2.0,
+        "hard_price_invalidation": 6.0,
+        "time_no_progress": 1.0,
+    }
+
+
+class StabilityExtremeSignalConfig(BaseModel):
+    stable_score_min: float = 8.5
+    score_margin_min: float = 3.0
+    min_hold_cycles_for_fast_exit: int = 2
+
+
+class StabilityLifecycleValueConfig(BaseModel):
+    min_hold_cycles: int
+    soft_cooldown_cycles: int
+    expected_review_cycles: int
+    max_hold_cycles_if_no_profit: int
+    breakeven_activation_profit_pct: float
+    breakeven_activation_r: float
+    trailing_activation_profit_pct: float
+    trailing_activation_r: float
+    trailing_distance_floor_pct: float
+    trailing_atr_multiple: float
+
+    @model_validator(mode="after")
+    def validate_values(self):
+        for key, value in self.model_dump().items():
+            if value < 0:
+                raise ValueError(f"{key} must be non-negative")
+        if self.trailing_distance_floor_pct <= 0:
+            raise ValueError("trailing_distance_floor_pct must be positive")
+        return self
+
+
+class StabilityProfitProtectionConfig(BaseModel):
+    use_atr_adaptive_distance: bool = True
+    atr_timeframe: str = "3m"
+    stop_only_moves_favorably: bool = True
+
+
+class StabilityCooldownConfig(BaseModel):
+    post_exit_cooldown_cycles: int = 3
+    post_loss_cooldown_cycles: int = 5
+    reverse_block_cycles: int = 2
+    allow_extreme_signal_override: bool = True
+
+
+class StabilityStoplossGuardConfig(BaseModel):
+    enabled: bool = True
+    lookback_trades: int = 5
+    stoploss_count_threshold: int = 4
+    cooldown_cycles: int = 20
+
+
+class StabilityMaxDrawdownGuardConfig(BaseModel):
+    enabled: bool = True
+    lookback_trades: int = 20
+    max_drawdown_pct: float = 0.05
+    cooldown_cycles: int = 40
+
+
+class StabilityPortfolioGuardsConfig(BaseModel):
+    stoploss_guard: StabilityStoplossGuardConfig = StabilityStoplossGuardConfig()
+    max_drawdown_guard: StabilityMaxDrawdownGuardConfig = StabilityMaxDrawdownGuardConfig()
+
+
+class StabilityRefactorConfig(BaseModel):
+    enabled: bool = True
+    mode: str = "shadow"
+    cycle_minutes: int = 3
+    extreme_signal: StabilityExtremeSignalConfig = StabilityExtremeSignalConfig()
+    regime_stabilization: StabilityRegimeStabilizationConfig = StabilityRegimeStabilizationConfig()
+    score_smoothing: StabilityScoreSmoothingConfig = StabilityScoreSmoothingConfig()
+    direction_stabilization: StabilityDirectionStabilizationConfig = StabilityDirectionStabilizationConfig()
+    instability_index: StabilityInstabilityIndexConfig = StabilityInstabilityIndexConfig()
+    entry_gate: StabilityEntryGateConfig = StabilityEntryGateConfig()
+    challenge_engine: StabilityChallengeEngineConfig = StabilityChallengeEngineConfig()
+    lifecycle: Dict[str, StabilityLifecycleValueConfig] = {
+        "SCALP": StabilityLifecycleValueConfig(
+            min_hold_cycles=1,
+            soft_cooldown_cycles=1,
+            expected_review_cycles=2,
+            max_hold_cycles_if_no_profit=10,
+            breakeven_activation_profit_pct=0.006,
+            breakeven_activation_r=0.75,
+            trailing_activation_profit_pct=0.012,
+            trailing_activation_r=1.0,
+            trailing_distance_floor_pct=0.004,
+            trailing_atr_multiple=1.0,
+        ),
+        "SHORT": StabilityLifecycleValueConfig(
+            min_hold_cycles=3,
+            soft_cooldown_cycles=2,
+            expected_review_cycles=5,
+            max_hold_cycles_if_no_profit=40,
+            breakeven_activation_profit_pct=0.010,
+            breakeven_activation_r=1.0,
+            trailing_activation_profit_pct=0.018,
+            trailing_activation_r=1.5,
+            trailing_distance_floor_pct=0.007,
+            trailing_atr_multiple=1.5,
+        ),
+        "SWING": StabilityLifecycleValueConfig(
+            min_hold_cycles=10,
+            soft_cooldown_cycles=5,
+            expected_review_cycles=20,
+            max_hold_cycles_if_no_profit=480,
+            breakeven_activation_profit_pct=0.015,
+            breakeven_activation_r=1.0,
+            trailing_activation_profit_pct=0.025,
+            trailing_activation_r=2.0,
+            trailing_distance_floor_pct=0.012,
+            trailing_atr_multiple=2.0,
+        ),
+    }
+    profit_protection: StabilityProfitProtectionConfig = StabilityProfitProtectionConfig()
+    cooldown: StabilityCooldownConfig = StabilityCooldownConfig()
+    portfolio_guards: StabilityPortfolioGuardsConfig = StabilityPortfolioGuardsConfig()
+
+    @model_validator(mode="after")
+    def validate_stability(self):
+        if self.mode not in {"shadow", "enforce_exit", "enforce_entry_and_exit"}:
+            raise ValueError("stability_refactor.mode must be shadow|enforce_exit|enforce_entry_and_exit")
+        scores = [
+            self.extreme_signal.stable_score_min,
+            self.extreme_signal.score_margin_min,
+            self.entry_gate.base_stable_score_min,
+            self.entry_gate.allow_threshold_floor_after_review,
+            self.entry_gate.score_margin_min,
+            self.challenge_engine.invalidation_threshold,
+            self.challenge_engine.max_score,
+        ]
+        if any(value < 0 or value > 10 for value in scores):
+            raise ValueError("stability score thresholds must be between 0 and 10")
+        return self
+
+
 class StopConfig(BaseModel):
     timeframe: str = "4h"
     fallback_timeframe: str = "1h"
@@ -294,6 +491,7 @@ class AppConfig(BaseModel):
     entry_quality: EntryQualityConfig = EntryQualityConfig()
     scoring: ScoringConfig = ScoringConfig()
     regime_execution: RegimeExecutionConfig = RegimeExecutionConfig()
+    stability_refactor: StabilityRefactorConfig = StabilityRefactorConfig()
     stop: StopConfig = StopConfig()
     account_snapshot: AccountSnapshotConfig
     logging: LoggingConfig

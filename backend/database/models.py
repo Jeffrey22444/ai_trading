@@ -1,9 +1,5 @@
-"""
-Database models for trading system - Simplified design
-"""
-from datetime import datetime
-from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, JSON, text
+"""Database models for trading system - Simplified design."""
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, JSON
 from sqlalchemy.sql import func
 import uuid
 
@@ -123,6 +119,63 @@ class TradeRecord(Base):
                 f"symbol={self.symbol}, amount={self.amount}, price={self.price})")
 
 
+class PositionPlan(Base):
+    """Stability refactor plan and lifecycle state for an opened position."""
+    __tablename__ = "position_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    position_id = Column(String(100), nullable=False, unique=True, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    side = Column(String(10), nullable=False)
+    status = Column(String(20), nullable=False, default="OPEN", index=True)
+    entry_time = Column(DateTime, nullable=True)
+    entry_price = Column(Float, nullable=True)
+    entry_order_id = Column(String(100), nullable=True)
+    close_time = Column(DateTime, nullable=True)
+    close_order_id = Column(String(100), nullable=True)
+    entry_regime = Column(String(20), nullable=True)
+    entry_setup = Column(String(30), nullable=True)
+    entry_lifecycle = Column(String(20), nullable=True)
+    entry_direction_bias = Column(String(10), nullable=True)
+    entry_total_score = Column(Float, nullable=True)
+    entry_long_score = Column(Float, nullable=True)
+    entry_short_score = Column(Float, nullable=True)
+    entry_confidence = Column(Float, nullable=True)
+    active_regime = Column(String(20), nullable=True)
+    stable_direction = Column(String(10), nullable=True)
+    stable_total_score = Column(Float, nullable=True)
+    stable_long_score = Column(Float, nullable=True)
+    stable_short_score = Column(Float, nullable=True)
+    instability_index = Column(Float, nullable=True)
+    initial_stop_loss = Column(Float, nullable=True)
+    current_stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    risk_per_unit = Column(Float, nullable=True)
+    risk_r_multiple = Column(Float, nullable=True)
+    peak_profit_pct = Column(Float, nullable=True)
+    peak_profit_r = Column(Float, nullable=True)
+    expected_min_hold_cycles = Column(Integer, nullable=True)
+    expected_review_cycles = Column(Integer, nullable=True)
+    max_hold_cycles_if_no_profit = Column(Integer, nullable=True)
+    cycles_held = Column(Integer, nullable=False, default=0)
+    warmup = Column(Integer, nullable=False, default=1)
+    position_health = Column(String(20), nullable=False, default="HEALTHY")
+    challenge_score = Column(Float, nullable=False, default=0.0)
+    challenge_streak = Column(Integer, nullable=False, default=0)
+    challenge_evidence_json = Column(JSON, nullable=True)
+    last_challenge_time = Column(DateTime, nullable=True)
+    no_new_evidence_cycles = Column(Integer, nullable=False, default=0)
+    profit_protection_state = Column(JSON, nullable=True)
+    cooldown_state = Column(JSON, nullable=True)
+    last_exit_class = Column(String(50), nullable=True)
+    last_exit_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"PositionPlan(position_id={self.position_id}, symbol={self.symbol}, status={self.status})"
+
+
 class SystemConfig(Base):
     """系统配置表"""
     __tablename__ = "system_config"
@@ -136,4 +189,3 @@ class SystemConfig(Base):
     
     def __repr__(self):
         return f"SystemConfig(key={self.key}, value={self.value})"
-

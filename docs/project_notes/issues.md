@@ -4,6 +4,12 @@ This is a concise project work log. Use GitHub commits and issues as the source 
 
 ## Current Entries
 
+### 2026-06-24 - Local Ops: Stability Refactor Enforcement Modes
+- **Status**: Completed
+- **Description**: Added stability-refactor enforcement modes for layered exits, lifecycle-aware profit protection, stable entry gate, cooldown checks, StoplossGuard, and calibration reporting while keeping committed default mode as `shadow`.
+- **URL**: local branch `stability-refactor`
+- **Notes**: `enforce_exit` disables the old raw opposite-score direct close path and routes exits through deterministic exit_class classification; `enforce_entry_and_exit` additionally gates new entries.
+
 ### 2026-06-22 - Local Ops: Cycle 479 Decision Display Conflict
 - **Status**: Completed
 - **Description**: Fixed the frontend decision list so final top-level action is the only normal-display entry permission source; legacy `quant_guardrail.allowed_action`, score, winrate, and sizing no longer imply an order was approved after final `ENTRY_HOLD`.

@@ -31,3 +31,4 @@ class AgentState(TypedDict):
     deterministic_decisions: Optional[Dict[str, Any]]
     regime_classification_result: Optional[Any]
     analysis_context: Optional[Dict[str, Any]]
+    stability_shadow: Optional[Dict[str, Any]]

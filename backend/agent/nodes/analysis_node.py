@@ -524,6 +524,8 @@ def _apply_position_exit_guardrail(
     """Close existing positions when quantified opposite-side evidence appears."""
     if current_position is None or decision.action in {"CLOSE_LONG", "CLOSE_SHORT"}:
         return decision
+    if config.stability_refactor.mode in {"enforce_exit", "enforce_entry_and_exit"}:
+        return decision
 
     side = str(getattr(current_position, "side", "")).upper()
     exit_threshold = config.scoring.exit_score_threshold

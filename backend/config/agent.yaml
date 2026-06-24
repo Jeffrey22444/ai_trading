@@ -166,6 +166,108 @@ regime_execution:
     max_slippage_pct: 0.003
     max_execution_retries: 2
     protection_retry_max: 1
+
+stability_refactor:
+  enabled: true
+  mode: shadow
+  cycle_minutes: 3
+  extreme_signal:
+    stable_score_min: 8.5
+    score_margin_min: 3.0
+    min_hold_cycles_for_fast_exit: 2
+  regime_stabilization:
+    window_cycles: 3
+    required_count: 2
+    min_average_confidence: 0.70
+    unknown_never_forces_exit: true
+  score_smoothing:
+    method: rolling_median
+    window_cycles: 3
+  direction_stabilization:
+    window_cycles: 3
+    required_count: 2
+    reversal_margin_min: 2.0
+    current_direction_score_max_for_reversal: 5.0
+    require_current_score_deterioration: true
+  instability_index:
+    window_cycles: 3
+    high_threshold: 2.0
+    entry_threshold_penalty: 1.0
+    mark_position_watch: true
+    tighten_profit_protection: false
+  entry_gate:
+    base_stable_score_min: 8.0
+    allow_threshold_floor_after_review: 7.0
+    score_margin_min: 2.0
+    block_if_instability_high: false
+    require_position_plan_fields: true
+  challenge_engine:
+    invalidation_threshold: 6.0
+    decay_after_no_evidence_cycles: 2
+    decay_amount: 1.0
+    max_score: 10.0
+    evidence_weights:
+      opposite_score_dominance: 2.0
+      stable_direction_reversal: 2.0
+      active_regime_mismatch: 1.0
+      setup_mismatch: 1.0
+      adverse_price_near_initial_stop: 2.0
+      hard_price_invalidation: 6.0
+      time_no_progress: 1.0
+  lifecycle:
+    SCALP:
+      min_hold_cycles: 1
+      soft_cooldown_cycles: 1
+      expected_review_cycles: 2
+      max_hold_cycles_if_no_profit: 10
+      breakeven_activation_profit_pct: 0.006
+      breakeven_activation_r: 0.75
+      trailing_activation_profit_pct: 0.012
+      trailing_activation_r: 1.0
+      trailing_distance_floor_pct: 0.004
+      trailing_atr_multiple: 1.0
+    SHORT:
+      min_hold_cycles: 3
+      soft_cooldown_cycles: 2
+      expected_review_cycles: 5
+      max_hold_cycles_if_no_profit: 40
+      breakeven_activation_profit_pct: 0.010
+      breakeven_activation_r: 1.0
+      trailing_activation_profit_pct: 0.018
+      trailing_activation_r: 1.5
+      trailing_distance_floor_pct: 0.007
+      trailing_atr_multiple: 1.5
+    SWING:
+      min_hold_cycles: 10
+      soft_cooldown_cycles: 5
+      expected_review_cycles: 20
+      max_hold_cycles_if_no_profit: 480
+      breakeven_activation_profit_pct: 0.015
+      breakeven_activation_r: 1.0
+      trailing_activation_profit_pct: 0.025
+      trailing_activation_r: 2.0
+      trailing_distance_floor_pct: 0.012
+      trailing_atr_multiple: 2.0
+  profit_protection:
+    use_atr_adaptive_distance: true
+    atr_timeframe: "3m"
+    stop_only_moves_favorably: true
+  cooldown:
+    post_exit_cooldown_cycles: 3
+    post_loss_cooldown_cycles: 5
+    reverse_block_cycles: 2
+    allow_extreme_signal_override: true
+  portfolio_guards:
+    stoploss_guard:
+      enabled: true
+      lookback_trades: 5
+      stoploss_count_threshold: 4
+      cooldown_cycles: 20
+    max_drawdown_guard:
+      enabled: true
+      lookback_trades: 20
+      max_drawdown_pct: 0.05
+      cooldown_cycles: 40
   
 # Account Snapshot Configuration
 account_snapshot:

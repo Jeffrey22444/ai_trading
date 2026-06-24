@@ -22,6 +22,7 @@ class Setup(StrEnum):
 
 
 class Lifecycle(StrEnum):
+    SCALP = "SCALP"
     SHORT = "SHORT"
     SWING = "SWING"
 
