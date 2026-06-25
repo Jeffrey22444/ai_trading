@@ -229,6 +229,7 @@ async def _execute_open_long(symbol: str, decision: Dict, trader, current_price:
         "status": "success",
         "action": "OPEN_LONG",
         "symbol": symbol,
+        "order_id": _order_id(order),
         "quantity": quantity,
         "leverage": leverage,
         "price": current_price,
@@ -293,6 +294,7 @@ async def _execute_open_short(symbol: str, decision: Dict, trader, current_price
         "status": "success",
         "action": "OPEN_SHORT",
         "symbol": symbol,
+        "order_id": _order_id(order),
         "quantity": quantity,
         "leverage": leverage,
         "price": current_price,
@@ -323,7 +325,7 @@ async def _execute_close_long(symbol: str, decision: Dict, trader, current_posit
         raise ValueError(f"{symbol} 没有多头持仓可平")
     
     # 执行全部平仓
-    await trader.close_long(symbol, 0)  # 0 表示全部平仓
+    order = await trader.close_long(symbol, 0)  # 0 表示全部平仓
     
     logger.info(f"平多仓成功: {symbol} 数量:{current_position.size}")
     
@@ -331,6 +333,7 @@ async def _execute_close_long(symbol: str, decision: Dict, trader, current_posit
         "status": "success",
         "action": "CLOSE_LONG",
         "symbol": symbol,
+        "order_id": _order_id(order),
         "quantity": current_position.size,
         "message": f"平多仓成功: {current_position.size}"
     }
@@ -342,7 +345,7 @@ async def _execute_close_short(symbol: str, decision: Dict, trader, current_posi
         raise ValueError(f"{symbol} 没有空头持仓可平")
     
     # 执行全部平仓
-    await trader.close_short(symbol, 0)  # 0 表示全部平仓
+    order = await trader.close_short(symbol, 0)  # 0 表示全部平仓
     
     logger.info(f"平空仓成功: {symbol} 数量:{current_position.size}")
     
@@ -350,6 +353,7 @@ async def _execute_close_short(symbol: str, decision: Dict, trader, current_posi
         "status": "success",
         "action": "CLOSE_SHORT",
         "symbol": symbol,
+        "order_id": _order_id(order),
         "quantity": current_position.size,
         "message": f"平空仓成功: {current_position.size}"
     }
@@ -370,6 +374,13 @@ def _execution_status(execution_result: Dict[str, Any]) -> str:
     if execution_result["status"] == "blocked":
         return "blocked"
     return "failed"
+
+
+def _order_id(order: Dict[str, Any] | None) -> str | None:
+    if not isinstance(order, dict):
+        return None
+    order_id = order.get("id") or order.get("order_id")
+    return str(order_id) if order_id else None
 
 
 def _decision_reference_price(decision: Dict[str, Any]) -> float | None:

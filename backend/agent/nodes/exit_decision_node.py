@@ -9,7 +9,12 @@ from agent.stability.engine import (
     build_observation,
     compute_shadow_state,
 )
-from agent.stability.persistence import get_open_plan, get_recent_plans, update_open_plan
+from agent.stability.persistence import (
+    get_open_plan,
+    get_recent_plans,
+    reconcile_flat_symbol,
+    update_open_plan,
+)
 from config.settings import config
 from trading.factory import get_trader
 from trading.symbols import same_symbol
@@ -97,7 +102,9 @@ async def _attach_stability(state: AgentState, positions) -> None:
         before = _behavior_snapshot(decision)
         try:
             position = next((pos for pos in positions if same_symbol(pos.symbol, symbol)), None)
-            plan = await get_open_plan(symbol) if position else None
+            if position is None:
+                await reconcile_flat_symbol(symbol)
+            plan = await get_open_plan(symbol, position=position) if position else None
             observation = build_observation(
                 symbol=symbol,
                 decision=decision,

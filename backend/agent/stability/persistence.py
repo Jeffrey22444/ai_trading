@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import select
@@ -15,10 +16,10 @@ from trading.symbols import same_symbol
 logger = logging.getLogger("AlphaTransformer")
 
 
-async def get_open_plan(symbol: str) -> PositionPlan | None:
+async def get_open_plan(symbol: str, position: Any | None = None, side: str | None = None) -> PositionPlan | None:
     try:
         async with get_session_maker()() as session:
-            return await _open_plan(session, symbol)
+            return await _open_plan(session, symbol, _position_side(position) or side)
     except Exception as exc:
         logger.error("PositionPlan read failed for %s: %s", symbol, exc)
         return None
@@ -38,12 +39,13 @@ async def get_recent_plans(symbol: str, limit: int = 20) -> list[PositionPlan]:
 async def update_open_plan(symbol: str, position: Any, shadow: dict[str, Any]) -> None:
     try:
         async with get_session_maker()() as session:
-            plan = await _open_plan(session, symbol)
+            side = _position_side(position)
+            plan = await _open_plan(session, symbol, side, position=position)
             if plan is None:
                 plan = PositionPlan(
-                    position_id=f"SHADOW_ORPHAN:{symbol}:{getattr(position, 'side', '')}:{getattr(position, 'entry_price', '')}",
+                    position_id=f"SHADOW_ORPHAN:{symbol}:{side}:{getattr(position, 'entry_price', '')}:{getattr(position, 'size', '')}",
                     symbol=symbol,
-                    side=str(getattr(position, "side", "")).upper(),
+                    side=side or "",
                     status="OPEN",
                     entry_time=datetime.now(),
                     entry_price=getattr(position, "entry_price", None),
@@ -86,24 +88,144 @@ async def upsert_open_plan(symbol: str, decision: dict[str, Any], result: dict[s
 async def close_plan(symbol: str, decision: dict[str, Any], result: dict[str, Any]) -> None:
     try:
         async with get_session_maker()() as session:
-            plan = await _open_plan(session, symbol)
+            plan = await _matching_open_plan(session, symbol, decision, result)
             if plan is None:
+                logger.warning(
+                    "PositionPlan close could not map order_id=%s symbol=%s side=%s",
+                    result.get("order_id"),
+                    symbol,
+                    _side_from_action(result.get("action") or decision.get("action")),
+                )
                 return
-            plan.status = "CLOSED"
-            plan.close_time = datetime.now()
-            plan.close_order_id = str(result.get("order_id")) if result.get("order_id") else None
-            plan.position_health = "CLOSED"
-            plan.last_exit_class = decision.get("exit_class")
-            plan.last_exit_reason = decision.get("exit_block_reason") or decision.get("reasoning")
+            _apply_close(plan, decision, result)
             await session.commit()
     except Exception as exc:
         logger.error("PositionPlan close write failed for %s: %s", symbol, exc)
 
 
-async def _open_plan(session, symbol: str) -> PositionPlan | None:
+async def reconcile_flat_position(
+    symbol: str,
+    side: str,
+    *,
+    order_id: str | None = None,
+    reason: str = "exchange_flat_reconciliation",
+) -> None:
+    try:
+        async with get_session_maker()() as session:
+            plans = await _open_plans(session, symbol, side)
+            if not plans:
+                logger.warning(
+                    "PositionPlan flat reconciliation found no OPEN plan order_id=%s symbol=%s side=%s",
+                    order_id,
+                    symbol,
+                    side,
+                )
+                return
+            for plan in plans:
+                _apply_close(
+                    plan,
+                    {"exit_class": "EXCHANGE_FLAT", "reasoning": reason},
+                    {"order_id": order_id, "action": f"CLOSE_{side.upper()}"},
+                )
+                logger.warning(
+                    "PositionPlan flat reconciliation closed stale plan position_id=%s order_id=%s symbol=%s side=%s",
+                    plan.position_id,
+                    order_id,
+                    symbol,
+                    side,
+                )
+            await session.commit()
+    except Exception as exc:
+        logger.error("PositionPlan flat reconciliation failed for %s %s: %s", symbol, side, exc)
+
+
+async def reconcile_flat_symbol(
+    symbol: str,
+    *,
+    reason: str = "exchange_flat_reconciliation",
+) -> None:
+    try:
+        async with get_session_maker()() as session:
+            plans = await _open_plans(session, symbol)
+            for plan in plans:
+                _apply_close(
+                    plan,
+                    {"exit_class": "EXCHANGE_FLAT", "reasoning": reason},
+                    {"action": f"CLOSE_{plan.side}"},
+                )
+                logger.warning(
+                    "PositionPlan flat reconciliation closed stale plan position_id=%s symbol=%s side=%s",
+                    plan.position_id,
+                    symbol,
+                    plan.side,
+                )
+            if plans:
+                await session.commit()
+    except Exception as exc:
+        logger.error("PositionPlan flat symbol reconciliation failed for %s: %s", symbol, exc)
+
+
+async def _open_plan(
+    session,
+    symbol: str,
+    side: str | None = None,
+    *,
+    position: Any | None = None,
+) -> PositionPlan | None:
+    plans = await _open_plans(session, symbol, side)
+    if position is not None:
+        matched = _fallback_match(plans, position)
+        if matched is not None:
+            return matched
+    return plans[0] if plans else None
+
+
+async def _open_plans(session, symbol: str, side: str | None = None) -> list[PositionPlan]:
     stmt = select(PositionPlan).where(PositionPlan.status == "OPEN").order_by(PositionPlan.id.desc())
     result = await session.execute(stmt)
-    return next((plan for plan in result.scalars().all() if same_symbol(plan.symbol, symbol)), None)
+    side = side.upper() if side else None
+    return [
+        plan
+        for plan in result.scalars().all()
+        if same_symbol(plan.symbol, symbol) and (side is None or plan.side == side)
+    ]
+
+
+async def _matching_open_plan(
+    session,
+    symbol: str,
+    decision: dict[str, Any],
+    result: dict[str, Any],
+) -> PositionPlan | None:
+    side = _side_from_action(result.get("action") or decision.get("action"))
+    plans = await _open_plans(session, symbol, side)
+    if not plans:
+        return None
+    candidate_position_id = result.get("position_id") or (result.get("position_state") or {}).get("position_id")
+    if candidate_position_id:
+        matched = next((plan for plan in plans if plan.position_id == str(candidate_position_id)), None)
+        if matched is not None:
+            return matched
+    candidate_entry_order_id = result.get("entry_order_id") or decision.get("entry_order_id")
+    if candidate_entry_order_id:
+        matched = next((plan for plan in plans if plan.entry_order_id == str(candidate_entry_order_id)), None)
+        if matched is not None:
+            return matched
+    position = result.get("position_state")
+    if isinstance(position, dict):
+        matched = _fallback_match(plans, SimpleNamespace(**position))
+        if matched is not None:
+            return matched
+    if len(plans) == 1:
+        return plans[0]
+    logger.warning(
+        "PositionPlan close ambiguous order_id=%s symbol=%s side=%s open_plans=%s",
+        result.get("order_id"),
+        symbol,
+        side,
+        [plan.position_id for plan in plans],
+    )
+    return None
 
 
 def _apply_entry(plan: PositionPlan, decision: dict[str, Any], result: dict[str, Any]) -> None:
@@ -113,6 +235,7 @@ def _apply_entry(plan: PositionPlan, decision: dict[str, Any], result: dict[str,
     plan.symbol = decision.get("symbol") or result.get("symbol") or plan.symbol
     plan.side = _side_from_action(result.get("action") or decision.get("action"))
     plan.status = "OPEN"
+    plan.entry_order_id = str(result.get("order_id")) if result.get("order_id") else plan.entry_order_id
     plan.entry_time = datetime.now()
     plan.entry_price = result.get("price") or state.get("entry_price") or guardrail.get("reference_price")
     plan.entry_regime = decision.get("regime") or shadow.get("active_regime")
@@ -134,6 +257,16 @@ def _apply_entry(plan: PositionPlan, decision: dict[str, Any], result: dict[str,
     plan.max_hold_cycles_if_no_profit = _lifecycle_defaults(plan.entry_lifecycle).get("max_hold_cycles_if_no_profit")
     plan.cooldown_state = {"mode": "shadow", "active": False}
     plan.profit_protection_state = {"mode": "shadow"}
+    plan.updated_at = datetime.now()
+
+
+def _apply_close(plan: PositionPlan, decision: dict[str, Any], result: dict[str, Any]) -> None:
+    plan.status = "CLOSED"
+    plan.close_time = datetime.now()
+    plan.close_order_id = str(result.get("order_id")) if result.get("order_id") else None
+    plan.position_health = "CLOSED"
+    plan.last_exit_class = decision.get("exit_class")
+    plan.last_exit_reason = decision.get("exit_block_reason") or decision.get("reasoning")
     plan.updated_at = datetime.now()
 
 
@@ -166,7 +299,41 @@ def _apply_shadow(plan: PositionPlan, shadow: dict[str, Any], position: Any) -> 
 
 def _position_id(symbol: str, result: dict[str, Any]) -> str:
     state = result.get("position_state") or {}
-    return str(result.get("position_id") or f"{symbol}:{state.get('side')}:{state.get('entry_price')}")
+    return str(
+        result.get("position_id")
+        or state.get("position_id")
+        or result.get("order_id")
+        or f"{symbol}:{state.get('side')}:{state.get('entry_price')}:{state.get('size') or result.get('quantity')}"
+    )
+
+
+def _position_side(position: Any | None) -> str | None:
+    if position is None:
+        return None
+    side = getattr(position, "side", None)
+    return str(side).upper() if side else None
+
+
+def _fallback_match(plans: list[PositionPlan], position: Any) -> PositionPlan | None:
+    entry_price = getattr(position, "entry_price", None)
+    if entry_price is None:
+        return None
+    for plan in plans:
+        if _close_enough(plan.entry_price, entry_price):
+            return plan
+    return None
+
+
+def _close_enough(left: Any, right: Any, pct: float = 0.001) -> bool:
+    try:
+        left_float = float(left)
+        right_float = float(right)
+    except (TypeError, ValueError):
+        return False
+    if left_float == right_float:
+        return True
+    basis = max(abs(left_float), abs(right_float), 1.0)
+    return abs(left_float - right_float) / basis <= pct
 
 
 def _side_from_action(action: str | None) -> str:
